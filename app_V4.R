@@ -13,6 +13,7 @@ library(rnaturalearthdata)
 library(obisindicators)
 library(measoshapes)
 library(ggplot2)
+library(RColorBrewer)
 library(markdown)
 library(shinyWidgets)
 library(bslib)
@@ -41,10 +42,10 @@ measo_names <- tibble(
 
 # Define UI for application
 modern_theme <- bs_theme(
-  version = 5,                     # Bootstrap 5
-  bootswatch = "cosmo",            # Cosmo gives a clean, modern look
-  primary = "#0077b6",             # Deep ocean blue
-  secondary = "#00b4d8",           # Lighter accent blue
+  version = 5,                      
+  bootswatch = "cosmo",             
+  primary = "#0077b6",              
+  secondary = "#00b4d8",           
   base_font = font_google("Roboto"),
   heading_font = font_google("Poppins"),
   code_font = font_google("Fira Code")
@@ -114,10 +115,17 @@ ui <- navbarPage(
         hr(),
         h4("Display Options", class = "text-primary"),
         radioGroupButtons("color_by", "Color points by:",
-                          choices = c("Family", "Genus", "Species", "iucn_status", "Vulnerability"),
+                          choices = c(
+                            "Family" = "Family",
+                            "Genus" = "Genus",
+                            "Species" = "Species",
+                            "IUCN status" = "iucn_status", 
+                            "Vulnerability" = "Vulnerability"
+                          ),
                           justified = TRUE, status = "primary"),
         radioGroupButtons("size_by", "Size points by:",
-                          choices = c("Vulnerability", "Length_cm"),
+                          choices = c("Vulnerability" = "Vulnerability",
+                                      "Length" = "Length_cm"),
                           justified = TRUE, status = "primary"),
         hr(),
         tags$b("Interactive Map Controls:"),
@@ -146,7 +154,8 @@ ui <- navbarPage(
         pickerInput("param_price", "Price Category", choices = c("All" = "")),
         pickerInput("param_catching_method", "Catching Method", choices = c("All" = "")),
         sliderInput("param_com_shallow_depth", "Commercial Shallow Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
-        sliderInput("param_com_deep_depth", "Commercial Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000))
+        sliderInput("param_com_deep_depth", "Commercial Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
+        sliderInput("param_vulnerability", "Vulnerability", min = 0, max = 100, value = c(0, 100))
       )
     )
   ),
@@ -160,11 +169,11 @@ ui <- navbarPage(
   # --- Spatial Diversity Tab ---
   tabPanel(
     icon = icon("globe"), "Spatial Diversity",
-    h3("Diversity Metrics for SO Filtered Data"),
+    h4("Diversity Indicators for SO filtered data", class = "text-primary"),
     p("Calculated using filtered species occurrences (drawn polygon and filters tab)"),
     DTOutput("diversity_table"),
     hr(),
-    h3("Diversity Metrics by MEASO Region"),
+    h4("Diversity Metrics by MEASO Region", class = "text-primary"),
     p("Diversity metrics for each MEASO region, calculated from the currently filtered data (excluding the drawn polygon filter)."),
     DTOutput("measo_diversity_table")
   ),
@@ -201,7 +210,7 @@ ui <- navbarPage(
     icon = icon("th"),"Spatial H3 Polygons",
     sidebarLayout(
       sidebarPanel(
-        h4("H3 Polygon Controls"),
+        h4("H3 Polygon Controls", class = "text-primary"),
         selectInput("h3_metric", "Select Metric", 
                     choices = c("Species richness" = "richness",
                                 "Shannon Diversity" = "shannon_diversity",
@@ -282,14 +291,16 @@ server <- function(input, output, session) {
     catching_method_choices <- dbGetQuery(con, "SELECT DISTINCT Catchingmethod FROM occurrences_with_traits WHERE Catchingmethod IS NOT NULL")
     updatePickerInput(session, "param_catching_method", choices = c("All" = "", sort(catching_method_choices$Catchingmethod)))
     
+    # Length slider
     length_range_raw <- dbGetQuery(con, "SELECT MIN(Length_cm) AS min_val, MAX(Length_cm) AS max_val FROM occurrences_with_traits WHERE Length_cm IS NOT NULL")
     initial_slider_ranges$length <- c(floor(length_range_raw$min_val), ceiling(length_range_raw$max_val))
     updateSliderInput(session, "param_length_cm",
                       min = initial_slider_ranges$length[1],
                       max = initial_slider_ranges$length[2],
-                      value = initial_slider_ranges$length)
+                      value = initial_slider_ranges$length,
+                      step = pretty(initial_slider_ranges$length[1]:initial_slider_ranges$length[2], n = 10)) # doesn't seem to be working
     
-    # Initialize Weight slider range
+    # Weight slider
     weight_range_raw <- dbGetQuery(con, "SELECT MIN(Weight) AS min_val, MAX(Weight) AS max_val FROM occurrences_with_traits WHERE Weight IS NOT NULL")
     initial_slider_ranges$weight <- c(floor(weight_range_raw$min_val), ceiling(weight_range_raw$max_val))
     updateSliderInput(session, "param_weight",
@@ -297,6 +308,7 @@ server <- function(input, output, session) {
                       max = initial_slider_ranges$weight[2],
                       value = initial_slider_ranges$weight)
     
+    # Vulnerability slider
     vulnerability_range_raw <- dbGetQuery(con, "SELECT MIN(Vulnerability) AS min_val, MAX(Vulnerability) AS max_val FROM occurrences_with_traits WHERE Vulnerability IS NOT NULL")
     initial_slider_ranges$vulnerability <- c(floor(vulnerability_range_raw$min_val), ceiling(vulnerability_range_raw$max_val))
     updateSliderInput(session, "param_vulnerability",
@@ -304,6 +316,7 @@ server <- function(input, output, session) {
                       max = initial_slider_ranges$vulnerability[2],
                       value = initial_slider_ranges$vulnerability)
     
+    # Shallow depth slider
     shallow_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeShallow) AS min_val, MAX(DepthRangeShallow) AS max_val FROM occurrences_with_traits WHERE DepthRangeShallow IS NOT NULL")
     initial_slider_ranges$shallow_depth <- c(floor(shallow_depth_range_raw$min_val), ceiling(shallow_depth_range_raw$max_val))
     updateSliderInput(session, "param_shallow_depth",
@@ -311,6 +324,7 @@ server <- function(input, output, session) {
                       max = initial_slider_ranges$shallow_depth[2],
                       value = initial_slider_ranges$shallow_depth)
     
+    # Deep depth slider
     deep_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeDeep) AS min_val, MAX(DepthRangeDeep) AS max_val FROM occurrences_with_traits WHERE DepthRangeDeep IS NOT NULL")
     initial_slider_ranges$deep_depth <- c(floor(deep_depth_range_raw$min_val), ceiling(deep_depth_range_raw$max_val))
     updateSliderInput(session, "param_deep_depth",
@@ -318,6 +332,7 @@ server <- function(input, output, session) {
                       max = initial_slider_ranges$deep_depth[2],
                       value = initial_slider_ranges$deep_depth)
     
+    # Commercial deep depth slider
     com_deep_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeComDeep) AS min_val, MAX(DepthRangeComDeep) AS max_val FROM occurrences_with_traits WHERE DepthRangeComDeep IS NOT NULL")
     initial_slider_ranges$com_deep_depth <- c(floor(com_deep_depth_range_raw$min_val), ceiling(com_deep_depth_range_raw$max_val))
     updateSliderInput(session, "param_com_deep_depth",
@@ -325,6 +340,7 @@ server <- function(input, output, session) {
                       max = initial_slider_ranges$com_deep_depth[2],
                       value = initial_slider_ranges$com_deep_depth)
     
+    # Commercial shallow depth slider
     com_shallow_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeComShallow) AS min_val, MAX(DepthRangeComShallow) AS max_val FROM occurrences_with_traits WHERE DepthRangeComShallow IS NOT NULL")
     initial_slider_ranges$com_shallow_depth <- c(floor(com_shallow_depth_range_raw$min_val), ceiling(com_shallow_depth_range_raw$max_val))
     updateSliderInput(session, "param_com_shallow_depth",
@@ -543,59 +559,10 @@ server <- function(input, output, session) {
     df
   })
   
-  point_color_col <- reactive(req(input$color_by))
-  
-  point_size_col <- reactive(req(input$size_by))
-  
-  color_palette_func <- reactive({
-    df <- filtered_data_from_db()
-    req(df)
-    color_col_name <- point_color_col()
-    
-    if (!color_col_name %in% names(df)) {
-      warning(paste("Color-by column '", color_col_name, "' not found in data. Using 'Unknown' for coloring."))
-      domain_values <- "Unknown"
-    } else {
-      domain_values <- unique(df[[color_col_name]])
-      domain_values <- domain_values[!is.na(domain_values) & df[[color_col_name]] != ""]
-      if(length(domain_values) == 0){
-        warning("No valid values for color mapping. Using 'Unknown' for coloring.")
-        domain_values <- "Unknown"
-      }
-    }
-    
-    colorFactor(palette = "Set3", domain = domain_values)
-  })
-  
-  point_radius_func <- reactive({
-    df <- filtered_data_from_db()
-    req(df)
-    size_col_name <- point_size_col()
-    
-    if (!size_col_name %in% names(df)) {
-      warning(paste("Size-by column '", size_col_name, "' not found in data. Defaulting radius to 5px."))
-      return(function(x) 5)
-    }
-    
-    values <- df[[size_col_name]]
-    values <- values[!is.na(values)]
-    if (length(values) == 0 || all(values == 0)) { return(function(x) 5) }
-    min_val <- min(values, na.rm = TRUE)
-    max_val <- max(values, na.rm = TRUE)
-    min_radius_px <- 3
-    max_radius_px <- 10
-    if (max_val == min_val) { return(function(x) (min_radius_px + max_radius_px) / 2) }
-    radius_scale_func <- function(val) {
-      scaled_val <- pmax(min_val, pmin(max_val, val))
-      min_radius_px + (scaled_val - min_val) / (max_val - min_val) * (max_radius_px - min_radius_px)
-    }
-    return(radius_scale_func)
-  })
-  
   # Code a button to reset filters
   observeEvent(input$reset_button, {
     message("--- Resetting Filters ---")
-    updateTextInput(session, "param_taxon", value = "THISISATEST")
+    updateTextInput(session, "param_taxon", value = "")
     message("CURRENT TAXON (after reset): [", input$param_taxon, "]")
     updateNumericInput(session, "param_aphia_id", value = NA)
     updateNumericInput(session, "param_fishbase_id", value = NA)
@@ -622,7 +589,76 @@ server <- function(input, output, session) {
     drawn_polygon_wkt(NULL)
     leafletProxy("spatial_plot") %>% clearGroup("drawn_polygon")
   })
-
+  
+  
+  # Preparation to plot the leaflet map
+  point_color_col <- reactive(req(input$color_by))
+  point_size_col <- reactive(req(input$size_by))
+  color_palette_func <- reactive({
+    df <- filtered_data_from_db()
+    req(df)
+    color_col_name <- point_color_col()
+    
+    if (!color_col_name %in% names(df)) {
+      warning(paste("Color-by column '", color_col_name, "' not found in data. Using 'Unknown' for coloring."))
+      domain_values <- "Unknown"
+    } else {
+      if (color_col_name == "Vulnerability") {
+        # Create discrete intervals for Vulnerability
+        breaks <- seq(0, 100, by = 10)
+        labels <- paste0(seq(0, 90, by = 10), "-", seq(10, 100, by = 10))
+        df$vulnerability_interval <- cut(df[[color_col_name]], breaks = breaks, labels = labels, include.lowest = TRUE)
+        
+        # Get unique intervals
+        domain_values <- unique(df$vulnerability_interval)
+        domain_values <- domain_values[!is.na(domain_values) & df$vulnerability_interval != ""]
+        
+        if (length(domain_values) == 0) {
+          warning("No valid values for color mapping. Using 'Unknown' for coloring.")
+          domain_values <- "Unknown"
+        }
+      } else {
+        domain_values <- unique(df[[color_col_name]])
+        domain_values <- domain_values[!is.na(domain_values) & df[[color_col_name]] != ""]
+        if (length(domain_values) == 0) {
+          warning("No valid values for color mapping. Using 'Unknown' for coloring.")
+          domain_values <- "Unknown"
+        }
+      }
+    }
+    
+    if (color_col_name == "Vulnerability") {
+      colorFactor(palette = rev(RColorBrewer::brewer.pal(n = 10, name = 'RdBu')), domain = domain_values)
+    } else {
+      colorFactor(palette = "Set3", domain = domain_values)
+    }
+  })
+  
+  
+  point_radius_func <- reactive({
+    df <- filtered_data_from_db()
+    req(df)
+    size_col_name <- point_size_col()
+    
+    if (!size_col_name %in% names(df)) {
+      warning(paste("Size-by column '", size_col_name, "' not found in data. Defaulting radius to 5px."))
+      return(function(x) 5)
+    }
+    
+    values <- df[[size_col_name]]
+    values <- values[!is.na(values)]
+    if (length(values) == 0 || all(values == 0)) { return(function(x) 5) }
+    min_val <- min(values, na.rm = TRUE)
+    max_val <- max(values, na.rm = TRUE)
+    min_radius_px <- 3
+    max_radius_px <- 10
+    if (max_val == min_val) { return(function(x) (min_radius_px + max_radius_px) / 2) }
+    radius_scale_func <- function(val) {
+      scaled_val <- pmax(min_val, pmin(max_val, val))
+      min_radius_px + (scaled_val - min_val) / (max_val - min_val) * (max_radius_px - min_radius_px)
+    }
+    return(radius_scale_func)
+  })
   
   # Code the map with leaflet
   output$spatial_plot <- renderLeaflet({
@@ -679,6 +715,21 @@ server <- function(input, output, session) {
     current_color_col <- point_color_col()
     current_size_col <- point_size_col()
     
+    # Create vulnerability intervals if coloring by Vulnerability
+    if (current_color_col == "Vulnerability") {
+      breaks <- seq(0, 100, by = 10)
+      labels <- paste0(seq(0, 90, by = 10), "-", seq(10, 100, by = 10))
+      df_valid_coords$marker_color_val <- cut(df_valid_coords$Vulnerability, breaks = breaks, labels = labels, include.lowest = TRUE)
+    } else {
+      df_valid_coords$marker_color_val <- df_valid_coords[[current_color_col]]
+    }
+    
+    df_valid_coords$marker_color_val[is.na(df_valid_coords$marker_color_val) | df_valid_coords$marker_color_val == ""] <- "Unknown"
+    
+    df_valid_coords$marker_size_val <- df_valid_coords[[current_size_col]]
+    df_valid_coords$marker_size_val[is.na(df_valid_coords$marker_size_val)] <- 0
+    df_valid_coords$marker_size_val <- replace(df_valid_coords$marker_size_val, is.infinite(df_valid_coords$marker_size_val), 0)
+    
     df_valid_coords <- df_valid_coords %>%
       mutate(popup_text = paste(
         "<b>Scientific Name:</b>", scientificName, "<br>",
@@ -693,20 +744,11 @@ server <- function(input, output, session) {
         "<b>Catching Method:</b>", Catchingmethod, "<br>",
         "<b>Commercial Shallow Depth:</b>", DepthRangeShallow, "<br>",
         case_when(
-          !is.na(Fishbase_url) & (Fishbase_url != "") ~ # Use single '&' for vectorized AND
+          !is.na(Fishbase_url) & (Fishbase_url != "") ~
             paste0("<b>FishBase Link:</b> <a href='", Fishbase_url, "' target='_blank'>Go to FishBase</a><br>"),
-          TRUE ~ "" # Default case for NA or empty Fishbase_url
+          TRUE ~ ""
         )
       ))
-    
-    df_valid_coords$marker_color_val <- df_valid_coords[[current_color_col]]
-    df_valid_coords$marker_size_val <- df_valid_coords[[current_size_col]]
-    
-    df_valid_coords$marker_color_val[is.na(df_valid_coords$marker_color_val) | df_valid_coords$marker_color_val == ""] <- "Unknown"
-    
-    df_valid_coords$marker_size_val[is.na(df_valid_coords$marker_size_val)] <- 0
-    df_valid_coords$marker_size_val <- replace(df_valid_coords$marker_size_val, is.infinite(df_valid_coords$marker_size_val), 0)
-    
     
     proxy <- leafletProxy("spatial_plot", data = df_valid_coords) %>%
       clearMarkers() %>%
@@ -726,7 +768,8 @@ server <- function(input, output, session) {
       position = "bottomright",
       pal = color_pal,
       values = df_valid_coords$marker_color_val,
-      title = paste("Color by", current_color_col),
+      title = if (current_color_col == "Vulnerability") "Color by Vulnerability Interval"
+       else if (current_color_col == "iucn_status") "Color by IUCN status" else paste("Color by", current_color_col),
       layerId = "colorLegend"
     )
     
@@ -991,12 +1034,13 @@ server <- function(input, output, session) {
           `Simpson Index` = simpson,
           `Dominance (Max P)` = maxp,
           `Effective Species Number (ES50)` = es,
-          `Hill (q=1)` = hill_1,
-          `Hill (q=2)` = hill_2,
-          `Hill (q=inf)` = hill_inf
+          `Hill1 (exp(shannon))` = hill_1,
+          `Hill2 (1/simpson)` = hill_2,
+          `Hill3 (1/maxp)` = hill_inf
         ) %>%
         mutate(across(c(`Shannon Index`, `Simpson Index`, `Dominance (Max P)`,
-                        `Effective Species Number (ES50)`, `Hill (q=1)`, `Hill (q=2)`, `Hill (q=inf)`),
+                        `Effective Species Number (ES50)`, `Hill1 (exp(shannon))`,
+                        `Hill2 (1/simpson)`, `Hill3 (1/maxp)`),
                       ~round(., 3)))
     } else if ("n" %in% names(final_measo_df) && "sp" %in% names(final_measo_df)) {
       final_measo_df <- final_measo_df %>%
@@ -1365,4 +1409,4 @@ server <- function(input, output, session) {
   
 }
 
-shinyApp(ui = ui, server = server)
+shinyApp(ui = ui, server = server)s
