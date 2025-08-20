@@ -244,16 +244,19 @@ ui <- navbarPage(
 server <- function(input, output, session) {
   
   # Set up database connection and disconnect on app exit
-  duckdb_file_path <- "TraitMapper_occurrences_v2.duckdb"
-  table_name <- "occurrences_with_traits"
-  
-  con <- dbConnect(duckdb::duckdb(), dbdir = duckdb_file_path, read_only = TRUE)
+  con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:", read_only = FALSE)
   message("Connected to DuckDB.")
   
+  # Load spatial extension if needed
   dbExecute(con, "INSTALL spatial;")
   dbExecute(con, "LOAD spatial;")
   message("DuckDB spatial extension loaded.")
   
+  # Attach the parquet file as a view
+  dbExecute(con, "CREATE OR REPLACE VIEW Actinopterygii_view AS SELECT * FROM 'Actinopterygii_database.parquet'")
+  table_name <- "Actinopterygii_view"  # Define the table_name variable
+  
+  # Disconnect from DuckDB when the app stops
   onStop(function() {
     dbDisconnect(con, shutdown = TRUE)
     message("Disconnected from DuckDB.")
@@ -273,26 +276,26 @@ server <- function(input, output, session) {
   observeEvent(TRUE, {
     message("--- Initializing filters and slider ranges ---")
     
-    ana_cat_choices <- dbGetQuery(con, "SELECT DISTINCT AnaCat FROM occurrences_with_traits WHERE AnaCat IS NOT NULL")
+    ana_cat_choices <- dbGetQuery(con, "SELECT DISTINCT AnaCat FROM Actinopterygii_view WHERE AnaCat IS NOT NULL")
     updatePickerInput(session, "param_AnaCat", choices = c("All" = "", sort(ana_cat_choices$AnaCat)))
     
-    dem_pel_choices <- dbGetQuery(con, "SELECT DISTINCT DemersPelag FROM occurrences_with_traits WHERE DemersPelag IS NOT NULL")
+    dem_pel_choices <- dbGetQuery(con, "SELECT DISTINCT DemersPelag FROM Actinopterygii_view WHERE DemersPelag IS NOT NULL")
     updatePickerInput(session, "param_DemersPelag", choices = c("All" = "", sort(dem_pel_choices$DemersPelag)))
     
-    iucn_choices <- dbGetQuery(con, "SELECT DISTINCT iucn_status FROM occurrences_with_traits WHERE iucn_status IS NOT NULL")
+    iucn_choices <- dbGetQuery(con, "SELECT DISTINCT iucn_status FROM Actinopterygii_view WHERE iucn_status IS NOT NULL")
     updatePickerInput(session, "param_iucn", choices = c("All" = "", sort(iucn_choices$iucn_status)))
     
-    importance_choices <- dbGetQuery(con, "SELECT DISTINCT Importance FROM occurrences_with_traits WHERE Importance IS NOT NULL")
+    importance_choices <- dbGetQuery(con, "SELECT DISTINCT Importance FROM Actinopterygii_view WHERE Importance IS NOT NULL")
     updatePickerInput(session, "param_importance", choices = c("All" = "", sort(importance_choices$Importance)))
     
-    price_choices <- dbGetQuery(con, "SELECT DISTINCT Price FROM occurrences_with_traits WHERE Price IS NOT NULL")
+    price_choices <- dbGetQuery(con, "SELECT DISTINCT Price FROM Actinopterygii_view WHERE Price IS NOT NULL")
     updatePickerInput(session, "param_price", choices = c("All" = "", sort(price_choices$Price)))
     
-    catching_method_choices <- dbGetQuery(con, "SELECT DISTINCT Catchingmethod FROM occurrences_with_traits WHERE Catchingmethod IS NOT NULL")
+    catching_method_choices <- dbGetQuery(con, "SELECT DISTINCT Catchingmethod FROM Actinopterygii_view WHERE Catchingmethod IS NOT NULL")
     updatePickerInput(session, "param_catching_method", choices = c("All" = "", sort(catching_method_choices$Catchingmethod)))
     
     # Length slider
-    length_range_raw <- dbGetQuery(con, "SELECT MIN(Length_cm) AS min_val, MAX(Length_cm) AS max_val FROM occurrences_with_traits WHERE Length_cm IS NOT NULL")
+    length_range_raw <- dbGetQuery(con, "SELECT MIN(Length_cm) AS min_val, MAX(Length_cm) AS max_val FROM Actinopterygii_view WHERE Length_cm IS NOT NULL")
     initial_slider_ranges$length <- c(floor(length_range_raw$min_val), ceiling(length_range_raw$max_val))
     updateSliderInput(session, "param_length_cm",
                       min = initial_slider_ranges$length[1],
@@ -301,7 +304,7 @@ server <- function(input, output, session) {
                       step = pretty(initial_slider_ranges$length[1]:initial_slider_ranges$length[2], n = 10)) # doesn't seem to be working
     
     # Weight slider
-    weight_range_raw <- dbGetQuery(con, "SELECT MIN(Weight) AS min_val, MAX(Weight) AS max_val FROM occurrences_with_traits WHERE Weight IS NOT NULL")
+    weight_range_raw <- dbGetQuery(con, "SELECT MIN(Weight) AS min_val, MAX(Weight) AS max_val FROM Actinopterygii_view WHERE Weight IS NOT NULL")
     initial_slider_ranges$weight <- c(floor(weight_range_raw$min_val), ceiling(weight_range_raw$max_val))
     updateSliderInput(session, "param_weight",
                       min = initial_slider_ranges$weight[1],
@@ -309,7 +312,7 @@ server <- function(input, output, session) {
                       value = initial_slider_ranges$weight)
     
     # Vulnerability slider
-    vulnerability_range_raw <- dbGetQuery(con, "SELECT MIN(Vulnerability) AS min_val, MAX(Vulnerability) AS max_val FROM occurrences_with_traits WHERE Vulnerability IS NOT NULL")
+    vulnerability_range_raw <- dbGetQuery(con, "SELECT MIN(Vulnerability) AS min_val, MAX(Vulnerability) AS max_val FROM Actinopterygii_view WHERE Vulnerability IS NOT NULL")
     initial_slider_ranges$vulnerability <- c(floor(vulnerability_range_raw$min_val), ceiling(vulnerability_range_raw$max_val))
     updateSliderInput(session, "param_vulnerability",
                       min = initial_slider_ranges$vulnerability[1],
@@ -317,7 +320,7 @@ server <- function(input, output, session) {
                       value = initial_slider_ranges$vulnerability)
     
     # Shallow depth slider
-    shallow_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeShallow) AS min_val, MAX(DepthRangeShallow) AS max_val FROM occurrences_with_traits WHERE DepthRangeShallow IS NOT NULL")
+    shallow_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeShallow) AS min_val, MAX(DepthRangeShallow) AS max_val FROM Actinopterygii_view WHERE DepthRangeShallow IS NOT NULL")
     initial_slider_ranges$shallow_depth <- c(floor(shallow_depth_range_raw$min_val), ceiling(shallow_depth_range_raw$max_val))
     updateSliderInput(session, "param_shallow_depth",
                       min = initial_slider_ranges$shallow_depth[1],
@@ -325,7 +328,7 @@ server <- function(input, output, session) {
                       value = initial_slider_ranges$shallow_depth)
     
     # Deep depth slider
-    deep_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeDeep) AS min_val, MAX(DepthRangeDeep) AS max_val FROM occurrences_with_traits WHERE DepthRangeDeep IS NOT NULL")
+    deep_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeDeep) AS min_val, MAX(DepthRangeDeep) AS max_val FROM Actinopterygii_view WHERE DepthRangeDeep IS NOT NULL")
     initial_slider_ranges$deep_depth <- c(floor(deep_depth_range_raw$min_val), ceiling(deep_depth_range_raw$max_val))
     updateSliderInput(session, "param_deep_depth",
                       min = initial_slider_ranges$deep_depth[1],
@@ -333,7 +336,7 @@ server <- function(input, output, session) {
                       value = initial_slider_ranges$deep_depth)
     
     # Commercial deep depth slider
-    com_deep_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeComDeep) AS min_val, MAX(DepthRangeComDeep) AS max_val FROM occurrences_with_traits WHERE DepthRangeComDeep IS NOT NULL")
+    com_deep_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeComDeep) AS min_val, MAX(DepthRangeComDeep) AS max_val FROM Actinopterygii_view WHERE DepthRangeComDeep IS NOT NULL")
     initial_slider_ranges$com_deep_depth <- c(floor(com_deep_depth_range_raw$min_val), ceiling(com_deep_depth_range_raw$max_val))
     updateSliderInput(session, "param_com_deep_depth",
                       min = initial_slider_ranges$com_deep_depth[1],
@@ -341,7 +344,7 @@ server <- function(input, output, session) {
                       value = initial_slider_ranges$com_deep_depth)
     
     # Commercial shallow depth slider
-    com_shallow_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeComShallow) AS min_val, MAX(DepthRangeComShallow) AS max_val FROM occurrences_with_traits WHERE DepthRangeComShallow IS NOT NULL")
+    com_shallow_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeComShallow) AS min_val, MAX(DepthRangeComShallow) AS max_val FROM Actinopterygii_view WHERE DepthRangeComShallow IS NOT NULL")
     initial_slider_ranges$com_shallow_depth <- c(floor(com_shallow_depth_range_raw$min_val), ceiling(com_shallow_depth_range_raw$max_val))
     updateSliderInput(session, "param_com_shallow_depth",
                       min = initial_slider_ranges$com_shallow_depth[1],
@@ -1409,4 +1412,4 @@ server <- function(input, output, session) {
   
 }
 
-shinyApp(ui = ui, server = server)s
+shinyApp(ui = ui, server = server)
