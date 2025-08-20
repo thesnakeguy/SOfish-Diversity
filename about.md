@@ -17,10 +17,25 @@ This application allows you to explore the diversity of fish species in the Sout
 1.  Navigate to the **`Filters`** tab to set your desired criteria.
 2.  Use the map on the **`Display`** tab to visualize the results.
 3.  Draw a polygon on the map to define a custom area of interest.
-4.  Check the different tabs to see the calculated metrics and maps based on your filters.
+4.  Check the different tabs to see the calculated diversity indicators and maps based on your filters.
 
 ***
 
-### Data Source
-All occurrence data is sourced from the GBIF and OBIS. Traits are sourced from Fishbase.<br>
-GBIF Occurrence Download https://www.gbif.org/occurrence/download/0019157-250802193616735 Accessed from R via rgbif (https://github.com/ropensci/rgbif) on 2025-08-06
+### Data Sources
+- **Occurrence data** is sourced from GBIF and OBIS. 
+- **Traits** are sourced from Fishbase.<br>
+<br>
+<br>
+<br>
+<div style="background-color: #f0f0f0; border-radius: 10px; padding: 15px; margin: 10px 0; border: 1px solid #d3d3d3;">
+<span style="font-size: 0.8em;">
+  <strong>License and Citation</strong><br>
+  This application is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>. If you use this tool or data in your research, please cite the relevant data sources and this application.<br>
+  GBIF Occurrence Download <a href="https://www.gbif.org/occurrence/download/0019157-250802193616735" target="_blank">https://www.gbif.org/occurrence/download/0019157-250802193616735</a> Accessed from R via <a href="https://github.com/ropensci/rgbif" target="_blank">rgbif</a> on 2025-08-06.
+</span>
+<br>
+<span style="font-size: 0.8em;">
+  <strong>Source Code and Issues</strong><br>
+  <a href="https://github.com/thesnakeguy/SOfish-Diversity" target="_blank">https://github.com/thesnakeguy/SOfish-Diversity</a>
+</span>
+</div>
