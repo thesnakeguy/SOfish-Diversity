@@ -143,18 +143,24 @@ ui <- navbarPage(
         sliderInput("param_weight", "Weight (g)", min = 0, max = 2500000, value = c(0, 2500000), round = TRUE),
         pickerInput("param_AnaCat", "Migration strategy", choices = c("All" = ""), options = list(`live-search` = TRUE)),
         pickerInput("param_DemersPelag", "Watercolumn niche", choices = c("All" = ""), options = list(`live-search` = TRUE)),
-        sliderInput("param_shallow_depth", "Shallow Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
-        sliderInput("param_deep_depth", "Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000))
+        sliderInput("param_shallow_depth", "Min. Shallow Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
+        sliderInput("param_deep_depth", "Max. Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
+        sliderInput("param_com_shallow_depth", "Common Shallow Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
+        sliderInput("param_com_deep_depth", "Common Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000))
       ),
       column(
         4,
         h4("More Filters", class = "text-primary"),
-        pickerInput("param_iucn", "IUCN Status", choices = c("All" = "")),
+        pickerInput("param_iucn", "IUCN Status", choices = c("All" = "",
+                                                             "DD (Data Deficient)" = "DD",
+                                                             "NE (Not Evaluated)" = "NE",
+                                                             "LC (Least Concern)" = "LC",
+                                                             "NT (Near Threatened)" = "NT",
+                                                             "VU (Vulnerable)" = "VU",
+                                                             "EN (Endangered)" = "EN")),
         pickerInput("param_importance", "Commercial Importance", choices = c("All" = "")),
         pickerInput("param_price", "Price Category", choices = c("All" = "")),
         pickerInput("param_catching_method", "Catching Method", choices = c("All" = "")),
-        sliderInput("param_com_shallow_depth", "Commercial Shallow Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
-        sliderInput("param_com_deep_depth", "Commercial Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
         sliderInput("param_vulnerability", "Vulnerability", min = 0, max = 100, value = c(0, 100))
       )
     )
@@ -195,7 +201,8 @@ ui <- navbarPage(
         sliderInput("temporal_window", "Moving Average Window Size (years)",
                     min = 1, max = 25, value = 5, step = 1),
         hr(),
-        p(strong("Note:"), "The moving average is only calculated for the years where a full window of data is available.")
+        p(strong("Note:"), "The moving average is only calculated for the years where a full window of data is available.
+          Estimation of the ES50 needs at least 50 records per year.")
       ),
       mainPanel(
         h3("Temporal diversity: Moving Average"),
@@ -283,7 +290,13 @@ server <- function(input, output, session) {
     updatePickerInput(session, "param_DemersPelag", choices = c("All" = "", sort(dem_pel_choices$DemersPelag)))
     
     iucn_choices <- dbGetQuery(con, "SELECT DISTINCT iucn_status FROM Actinopterygii_view WHERE iucn_status IS NOT NULL")
-    updatePickerInput(session, "param_iucn", choices = c("All" = "", sort(iucn_choices$iucn_status)))
+    updatePickerInput(session, "param_iucn", choices = c("All" = "",
+                                                         "DD (Data Deficient)" = "DD",
+                                                         "NE (Not Evaluated)" = "NE",
+                                                         "LC (Least Concern)" = "LC",
+                                                         "NT (Near Threatened)" = "NT",
+                                                         "VU (Vulnerable)" = "VU",
+                                                         "EN (Endangered)" = "EN"))
     
     importance_choices <- dbGetQuery(con, "SELECT DISTINCT Importance FROM Actinopterygii_view WHERE Importance IS NOT NULL")
     updatePickerInput(session, "param_importance", choices = c("All" = "", sort(importance_choices$Importance)))
@@ -291,7 +304,8 @@ server <- function(input, output, session) {
     price_choices <- dbGetQuery(con, "SELECT DISTINCT Price FROM Actinopterygii_view WHERE Price IS NOT NULL")
     updatePickerInput(session, "param_price", choices = c("All" = "", sort(price_choices$Price)))
     
-    catching_method_choices <- dbGetQuery(con, "SELECT DISTINCT Catchingmethod FROM Actinopterygii_view WHERE Catchingmethod IS NOT NULL")
+    catching_method_choices <- dbGetQuery(con, "SELECT DISTINCT Catchingmethod FROM Actinopterygii_view WHERE Catchingmethod IS NOT NULL
+                                          AND TRIM(Catchingmethod) <> ''")
     updatePickerInput(session, "param_catching_method", choices = c("All" = "", sort(catching_method_choices$Catchingmethod)))
     
     # Length slider
@@ -335,7 +349,7 @@ server <- function(input, output, session) {
                       max = initial_slider_ranges$deep_depth[2],
                       value = initial_slider_ranges$deep_depth)
     
-    # Commercial deep depth slider
+    # common deep depth slider
     com_deep_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeComDeep) AS min_val, MAX(DepthRangeComDeep) AS max_val FROM Actinopterygii_view WHERE DepthRangeComDeep IS NOT NULL")
     initial_slider_ranges$com_deep_depth <- c(floor(com_deep_depth_range_raw$min_val), ceiling(com_deep_depth_range_raw$max_val))
     updateSliderInput(session, "param_com_deep_depth",
@@ -343,7 +357,7 @@ server <- function(input, output, session) {
                       max = initial_slider_ranges$com_deep_depth[2],
                       value = initial_slider_ranges$com_deep_depth)
     
-    # Commercial shallow depth slider
+    # common shallow depth slider
     com_shallow_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeComShallow) AS min_val, MAX(DepthRangeComShallow) AS max_val FROM Actinopterygii_view WHERE DepthRangeComShallow IS NOT NULL")
     initial_slider_ranges$com_shallow_depth <- c(floor(com_shallow_depth_range_raw$min_val), ceiling(com_shallow_depth_range_raw$max_val))
     updateSliderInput(session, "param_com_shallow_depth",
@@ -429,7 +443,6 @@ server <- function(input, output, session) {
     if (!is.null(clause <- handle_nulls_in_slider_filter("param_length_cm", "Length_cm", initial_slider_ranges$length))) {
       where_clauses <- c(where_clauses, clause)
     }
-    # Add Weight filter using "Weight" column
     if (!is.null(clause <- handle_nulls_in_slider_filter("param_weight", "Weight", initial_slider_ranges$weight))) {
       where_clauses <- c(where_clauses, clause)
     }
@@ -734,24 +747,36 @@ server <- function(input, output, session) {
     df_valid_coords$marker_size_val <- replace(df_valid_coords$marker_size_val, is.infinite(df_valid_coords$marker_size_val), 0)
     
     df_valid_coords <- df_valid_coords %>%
-      mutate(popup_text = paste(
-        "<b>Scientific Name:</b>", scientificName, "<br>",
-        "<b>Genus:</b>", Genus, "<br>",
-        "<b>Family:</b>", Family, "<br>",
-        "<b>Length (cm):</b>", Length_cm, "<br>",
-        "<b>Weight (g):</b>", Weight, "<br>",
-        "<b>Vulnerability:</b>", Vulnerability, "<br>",
-        "<b>IUCN Status:</b>", iucn_status, "<br>",
-        "<b>Commercial Importance:</b>", Importance, "<br>",
-        "<b>Price:</b>", Price, "<br>",
-        "<b>Catching Method:</b>", Catchingmethod, "<br>",
-        "<b>Commercial Shallow Depth:</b>", DepthRangeShallow, "<br>",
-        case_when(
-          !is.na(Fishbase_url) & (Fishbase_url != "") ~
-            paste0("<b>FishBase Link:</b> <a href='", Fishbase_url, "' target='_blank'>Go to FishBase</a><br>"),
-          TRUE ~ ""
+      mutate(
+        iucn_status_formatted = case_when(
+          iucn_status == "DD" ~ "Data Deficient (DD)",
+          iucn_status == "NE" ~ "Not Evaluated (NE)",
+          iucn_status == "LC" ~ "Least Concern (LC)",
+          iucn_status == "NT" ~ "Near Threatened (NT)",
+          iucn_status == "VU" ~ "Vulnerable (VU)",
+          iucn_status == "EN" ~ "Endangered (EN)",
+          TRUE ~ as.character(iucn_status) # Fallback for any other values
+        ),
+        popup_text = paste(
+          "<b>Scientific Name:</b> <i>", scientificName, "</i><br>",
+          "<b>Genus:</b>", Genus, "<br>",
+          "<b>Family:</b>", Family, "<br>",
+          "<b>Length (cm):</b>", Length_cm, "<br>",
+          "<b>Weight (g):</b>", Weight, "<br>",
+          "<b>Vulnerability:</b>", Vulnerability, "<br>",
+          "<b>IUCN Status:</b>", iucn_status_formatted, "<br>",
+          "<b>Commercial Importance:</b>", Importance, "<br>",
+          "<b>Price:</b>", Price, "<br>",
+          "<b>Catching Method:</b>", Catchingmethod, "<br>",
+          "<b>Shallow Depth:</b>", paste(DepthRangeShallow, "m"), "<br>",
+          "<b>Deep Depth:</b>", paste(DepthRangeDeep, "m"), "<br>",
+          case_when(
+            !is.na(Fishbase_url) & (Fishbase_url != "") ~
+              paste0("<b>FishBase Link:</b> <a href='", Fishbase_url, "' target='_blank'>Go to FishBase</a><br>"),
+            TRUE ~ ""
+          )
         )
-      ))
+      )
     
     proxy <- leafletProxy("spatial_plot", data = df_valid_coords) %>%
       clearMarkers() %>%
