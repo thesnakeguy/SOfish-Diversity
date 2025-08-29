@@ -281,10 +281,12 @@ ui <- navbarPage(
     )
   ),
   
-  # --- About Tab ---
-  tabPanel(
-    icon = icon("info-circle"), "About",
-    includeMarkdown("about.md")
+  # --- Help dropdown menu tab ---
+  navbarMenu(
+    "Help",
+    tabPanel("About the App", includeMarkdown("about.md")),
+    tabPanel("Cite Us", includeMarkdown("cite_us.md")),
+    tabPanel("Report a Bug", includeMarkdown("report_bug.md"))
   )
 )
 
