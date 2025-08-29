@@ -7,7 +7,7 @@ This application allows you to explore the diversity of fish species in the Sout
 ### Key Features
 * **Interactive Map:** Visualize species occurrences on a live map. You can zoom in, pan, and draw a polygon to filter data in a specific area.
 * **Flexible Filters:** Use the **`Filters`** tab to narrow down your search by taxonomy, traits, IUCN status, and more.
-* **Diversity Analysis:** The app calculates and displays diversity metrics for your filtered data, both spatially (by MEASO region) and temporally (as a moving average over time).
+* **Diversity Analysis:** The app calculates and displays diversity indicators for your filtered data, both spatially (by MEASO region) and temporally (as a moving average over time).
 * **Temporal Trends:** The **`Temporal Diversity`** tab shows how diversity metrics like the Shannon Index and Species Richness change over time, alongside a measure of sampling effort.
 * **H3 Diversity Grid:** The **`Spatial H3 Polygons`** tab flexibly visualizes different diversity estimators.
 
@@ -23,7 +23,7 @@ This application allows you to explore the diversity of fish species in the Sout
 
 ### Data Sources
 - **Occurrence data** is sourced from GBIF and OBIS. 
-- **Traits** are sourced from Fishbase.<br>
+- **Traits** are sourced from Fishbase and WoRMS.<br>
 <br>
 <br>
 <br>
@@ -31,7 +31,7 @@ This application allows you to explore the diversity of fish species in the Sout
 <span style="font-size: 0.8em;">
   <strong>License and Citation</strong><br>
   This application is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>. If you use this tool or data in your research, please cite the relevant data sources and this application.<br>
-  GBIF Occurrence Download <a href="https://www.gbif.org/occurrence/download/0019157-250802193616735" target="_blank">https://www.gbif.org/occurrence/download/0019157-250802193616735</a> Accessed from R via <a href="https://github.com/ropensci/rgbif" target="_blank">rgbif</a> on 2025-08-06.
+  GBIF Occurrence Download: <a href="https://doi.org/10.15468/dl.uf8fd2" target="_blank">https://doi.org/10.15468/dl.uf8fd2</a>
 </span>
 <br>
 <span style="font-size: 0.8em;">
