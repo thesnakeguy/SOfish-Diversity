@@ -27,6 +27,7 @@ library(shinyWidgets)
 library(bslib)
 library(h3)
 library(zoo)
+library(plotly)
 
 #### 2. LOAD SPATIAL DATA ####
 # Southern Ocean boundary
@@ -122,35 +123,30 @@ ui <- navbarPage(
   tabPanel(
     icon = icon("filter"), "Filters",
     fluidRow(
-      column(
-        4,
-        h4("Filter by Taxonomy", class = "text-primary"),
-        # Multi Taxon search UI
-        div(
-          id = "taxon_search_container",
-          style = "margin-bottom: 10px;",
-          # Main search input
-          textInput(
-            "param_taxon_input",
-            "Taxon Search",
-            value = "",
-            placeholder = "e.g. Dissostichus eleginoides, Champsocephalus gunnari,..."
-          ),
-          actionButton("param_taxon_add", "Add", icon = icon("plus")),
-          # Text box to display active taxa
-          textInput(
-            "active_taxa_display",
-            "Active Taxa:",
-            value = "",
-            placeholder = "No taxa selected"
-          ),
-          # Remove all button
-          actionButton("param_taxon_remove_all", "Remove all", icon = icon("times"))
-        ),
-        numericInput("param_aphia_id", "Aphia ID", value = NA),
-        numericInput("param_fishbase_id", "FishBase ID", value = NA),
-        numericInput("param_gbif_id", "GBIF ID", value = NA),
+      column(4,
+       wellPanel(
+         h4("Filter by Taxonomy", class = "text-primary"),
+         # The selectizeInput handles everything now
+         selectizeInput(
+           "param_taxon_input",
+           "Taxon Search",
+           choices = NULL,
+           multiple = TRUE,
+           options = list(
+             placeholder = "e.g. Channichthyidae, Stomiiformes, ...",
+             onInitialize = I('function() { this.setValue(""); }'),
+             create = TRUE,
+             maxOptions = Inf
+           )
+         ),
+         actionButton("removeAllTaxaBtn", "Remove All", icon = icon("times"), class = "btn-danger"),
+         hr(),
+         numericInput("param_aphia_id", "Aphia ID", value = NA),
+         numericInput("param_fishbase_id", "FishBase ID", value = NA),
+         numericInput("param_gbif_id", "GBIF ID", value = NA)
+       ),
         hr(),
+       wellPanel(
         h4("Display Options", class = "text-primary"),
         radioGroupButtons("color_by", "Color points by:",
                           choices = c(
@@ -169,40 +165,47 @@ ui <- navbarPage(
         hr(),
         tags$b("Interactive Map Controls:"),
         p("Use the drawing tools on the map to filter points by a custom polygon."),
-        actionBttn("clear_polygon", "Clear Drawn Polygon", style = "fill", color = "warning"),
+        actionBttn("clear_polygon", "Clear Drawn Polygon", style = "fill", color = "warning")
+        )
+      ),
+      column(
+        4,
+        wellPanel(
+          h4("Filter by Traits", class = "text-primary"),
+          sliderInput("param_length_cm", "Length (cm)", min = 0, max = 1000, value = c(0, 1000)),
+          sliderInput("param_weight", "Weight (g)", min = 0, max = 2500000, value = c(0, 2500000), round = TRUE),
+          pickerInput("param_AnaCat", "Migration strategy", choices = c("All" = ""), options = list(`live-search` = TRUE)),
+          pickerInput("param_DemersPelag", "Watercolumn niche", choices = c("All" = ""), options = list(`live-search` = TRUE)),
+          sliderInput("param_shallow_depth", "Min. Shallow Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
+          sliderInput("param_deep_depth", "Max. Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
+          sliderInput("param_com_shallow_depth", "Common Shallow Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
+          sliderInput("param_com_deep_depth", "Common Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000))
+          )
+      ),
+      column(
+        4,
+        wellPanel(
+          h4("More Filters", class = "text-primary"),
+          pickerInput("param_iucn", "IUCN Status", choices = c("All" = "",
+                                                               "DD (Data Deficient)" = "DD",
+                                                               "NE (Not Evaluated)" = "NE",
+                                                               "LC (Least Concern)" = "LC",
+                                                               "NT (Near Threatened)" = "NT",
+                                                               "VU (Vulnerable)" = "VU",
+                                                               "EN (Endangered)" = "EN")),
+          pickerInput("param_importance", "Commercial Importance", choices = c("All" = "")),
+          pickerInput("param_price", "Price Category", choices = c("All" = "")),
+          pickerInput("param_catching_method", "Catching Method", choices = c("All" = "")),
+          sliderInput("param_vulnerability", "Vulnerability", min = 0, max = 100, value = c(0, 100))
+          ),
         hr(),
-        actionBttn("reset_button", "Reset All Filters", style = "fill", color = "danger")
-      ),
-      column(
-        4,
-        h4("Filter by Traits", class = "text-primary"),
-        sliderInput("param_length_cm", "Length (cm)", min = 0, max = 1000, value = c(0, 1000)),
-        sliderInput("param_weight", "Weight (g)", min = 0, max = 2500000, value = c(0, 2500000), round = TRUE),
-        pickerInput("param_AnaCat", "Migration strategy", choices = c("All" = ""), options = list(`live-search` = TRUE)),
-        pickerInput("param_DemersPelag", "Watercolumn niche", choices = c("All" = ""), options = list(`live-search` = TRUE)),
-        sliderInput("param_shallow_depth", "Min. Shallow Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
-        sliderInput("param_deep_depth", "Max. Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
-        sliderInput("param_com_shallow_depth", "Common Shallow Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
-        sliderInput("param_com_deep_depth", "Common Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000))
-      ),
-      column(
-        4,
-        h4("More Filters", class = "text-primary"),
-        pickerInput("param_iucn", "IUCN Status", choices = c("All" = "",
-                                                             "DD (Data Deficient)" = "DD",
-                                                             "NE (Not Evaluated)" = "NE",
-                                                             "LC (Least Concern)" = "LC",
-                                                             "NT (Near Threatened)" = "NT",
-                                                             "VU (Vulnerable)" = "VU",
-                                                             "EN (Endangered)" = "EN")),
-        pickerInput("param_importance", "Commercial Importance", choices = c("All" = "")),
-        pickerInput("param_price", "Price Category", choices = c("All" = "")),
-        pickerInput("param_catching_method", "Catching Method", choices = c("All" = "")),
-        sliderInput("param_vulnerability", "Vulnerability", min = 0, max = 100, value = c(0, 100)),
-        verbatimTextOutput("record_count"),
-        verbatimTextOutput("species_count"),
-        # Go to map button
-        actionBttn("go_to_map_button", "Go to map!", style = "fill", color = "primary")
+        wellPanel(
+          verbatimTextOutput("record_count"),
+          verbatimTextOutput("species_count"),
+          # Go to map button
+          actionBttn("go_to_map_button", "Go to map!", style = "fill", color = "primary"),
+          actionBttn("reset_button", "Reset All Filters", style = "fill", color = "danger")
+          )
       )
     )
   ),
@@ -210,21 +213,53 @@ ui <- navbarPage(
   # --- Table Tab ---
   tabPanel(
     icon = icon("table"), "Table",
+    # Table output
     DTOutput("occurrence_table")
   ),
   
   # --- Spatial Diversity Tab ---
   tabPanel(
     icon = icon("globe"), "Spatial Diversity",
-    h4("Diversity Indicators for SO filtered data", class = "text-primary"),
-    p("Calculated using filtered species occurrences (drawn polygon and filters tab)"),
-    DTOutput("diversity_table"),
-    hr(),
-    h4("Diversity Metrics by MEASO Region", class = "text-primary"),
-    p("Diversity metrics for each MEASO region, calculated from the currently filtered data (excluding the drawn polygon filter)."),
-    DTOutput("measo_diversity_table")
+    
+    # Panel for Overall Diversity
+    wellPanel(
+      h4("Overall Diversity Metrics", class = "text-primary"),
+      p("These indicators are calculated based on all filtered occurrences, including those within any drawn polygon."),
+      DTOutput("diversity_table")
+    ),
+    
+    # Panel for Regional Diversity
+    wellPanel(
+      h4("Diversity by MEASO Region", class = "text-primary"),
+      p("Explore how diversity metrics vary across different MEASO regions. These calculations are based on the active filters in the 'filters' tab."),
+      
+      # Use fluidRow for a clean, two-by-two grid layout
+      fluidRow(
+        column(6,
+               h5("Number of Species", class = "text-center"),
+               plotly::plotlyOutput("measo_species_plot", height = "250px")
+        ),
+        column(6,
+               h5("Shannon Index", class = "text-center"),
+               plotly::plotlyOutput("measo_shannon_plot", height = "250px")
+        )
+      ),
+      
+      # Second row for the remaining two charts
+      fluidRow(
+        column(6,
+               h5("Simpson Index", class = "text-center"),
+               plotly::plotlyOutput("measo_simpson_plot", height = "250px")
+        ),
+        column(6,
+               h5("Effective Species Number (ES50)", class = "text-center"),
+               plotly::plotlyOutput("measo_es50_plot", height = "250px")
+        )
+      ),
+      
+      DTOutput("measo_diversity_table")
+    )
   ),
-  
   # --- Temporal Diversity Tab ---
   tabPanel(
     icon = icon("clock"), "Temporal Diversity",
@@ -401,33 +436,38 @@ server <- function(input, output, session) {
   })
   
   #### Taxon Filtering ####
-  values <- reactiveValues(selected_taxa = c("Channichthyidae"))
   
-  observe({
-    updateTextInput(session, "active_taxa_display", value = paste(values$selected_taxa, collapse = ", "))
-  })
-  
-  observeEvent(input$param_taxon_add, {
-    req(input$param_taxon_input)
-    new_taxa <- strsplit(input$param_taxon_input, ",\\s*")[[1]]
-    new_taxa <- new_taxa[new_taxa != ""]
-    values$selected_taxa <- union(values$selected_taxa, new_taxa)
-    updateTextInput(session, "active_taxa_display", value = paste(values$selected_taxa, collapse = ", "))
-    updateTextInput(session, "param_taxon_input", value = "")
-  })
-  
-  observeEvent(input$param_taxon_remove_all, {
-    values$selected_taxa <- character(0)
-    updateTextInput(session, "active_taxa_display", value = "")
-  })
+  #### Make list of taxon names for autocompletion in the taxon input field ####
+  taxon_choices <- dbGetQuery(con, "
+  SELECT scientificName AS name FROM Actinopterygii_view
+  UNION
+  SELECT Species AS name FROM Actinopterygii_view
+  UNION
+  SELECT Genus AS name FROM Actinopterygii_view
+  UNION
+  SELECT Family AS name FROM Actinopterygii_view
+  UNION
+  SELECT \"Order\" AS name FROM Actinopterygii_view
+  UNION
+  SELECT \"Class\" AS name FROM Actinopterygii_view
+  ")
+  # Convert the result to a clean, unique vector
+  taxon_choices <- sort(unique(na.omit(taxon_choices$name)))
+  # Now, update the selectizeInput with these choices
+  updateSelectizeInput(session, "param_taxon_input", choices = taxon_choices)
   
   #### Build SQL WHERE Clauses ####
   build_where_clauses <- function(include_spatial_filter = TRUE) {
     where_clauses <- c()
     
-    if (length(values$selected_taxa) > 0) {
-      taxon_clauses <- lapply(values$selected_taxa, function(taxon) {
-        search_term_lower <- tolower(taxon)
+    # Check if any taxa have been selected in the selectizeInput
+    if (!is.null(input$param_taxon_input) && length(input$param_taxon_input) > 0) {
+      # Initialize a list to hold the individual search clauses
+      clauses_list <- list()
+      
+      # Loop through each selected taxon from the selectizeInput
+      for (search_term in input$param_taxon_input) {
+        search_term_lower <- tolower(search_term)
         quoted_like_pattern <- DBI::dbQuoteLiteral(con, paste0('%', search_term_lower, '%'))
         quoted_exact_term <- DBI::dbQuoteLiteral(con, search_term_lower)
         
@@ -438,7 +478,7 @@ server <- function(input, output, session) {
         q_Order <- DBI::dbQuoteIdentifier(con, "Order")
         q_Class <- DBI::dbQuoteIdentifier(con, "Class")
         
-        clauses_list <- c(
+        term_clauses <- c(
           paste0("LOWER(", q_scientificName, ") LIKE ", quoted_like_pattern),
           paste0("LOWER(", q_Species, ") LIKE ", quoted_like_pattern),
           paste0("LOWER(", q_Genus, ") = ", quoted_exact_term),
@@ -446,10 +486,12 @@ server <- function(input, output, session) {
           paste0("LOWER(", q_Order, ") = ", quoted_exact_term),
           paste0("LOWER(", q_Class, ") = ", quoted_exact_term)
         )
-        return(paste0("(", paste(clauses_list, collapse = " OR "), ")"))
-      })
+        clauses_list[[length(clauses_list) + 1]] <- paste0("(", paste(term_clauses, collapse = " OR "), ")")
+      }
       
-      where_clauses <- c(where_clauses, paste(taxon_clauses, collapse = " OR "))
+      # Combine all taxon clauses with 'OR'
+      clause <- paste0("(", paste(clauses_list, collapse = " OR "), ")")
+      where_clauses <- c(where_clauses, clause)
     }
     
     if (!is.null(input$param_aphia_id) && !is.na(input$param_aphia_id)) {
@@ -638,6 +680,10 @@ server <- function(input, output, session) {
   })
   
   #### Reset Filters ####
+  observeEvent(input$removeAllTaxaBtn, {
+    updateSelectizeInput(session, "param_taxon_input", selected = character(0))
+  })
+  
   observeEvent(input$reset_button, {
     message("--- Resetting Filters ---")
     values$selected_taxa <- character(0)
@@ -1073,6 +1119,9 @@ server <- function(input, output, session) {
     return(measo_with_info)
   })
   
+  
+  ### Estimate Diversity within MEASO regions ####
+  
   measo_diversity_metrics <- reactive({
     message("--- Calculating MEASO region diversity metrics ---")
     
@@ -1224,6 +1273,83 @@ server <- function(input, output, session) {
     )
   })
   
+  # Create bar plots for MEASO diversity 
+  # Render the Species Count bar chart
+  output$measo_species_plot <- plotly::renderPlotly({
+    req(measo_diversity_metrics())
+    plot_data <- measo_diversity_metrics()
+    
+    p <- ggplot(plot_data, aes(x = `MEASO_Region`, y = `Number of Species`, fill = `MEASO_Region`)) +
+      geom_bar(stat = "identity") +
+      labs(x = NULL, y = "Number of Species") +
+      theme_minimal() +
+      theme(legend.position = "none",
+            axis.x.text = element_text(angle = 45)) +
+      scale_fill_viridis_d()
+    
+    numberofspecies_plotly <- plotly::ggplotly(p, tooltip = c("x", "y")) %>%
+      layout(xaxis = list(tickangle = 45))
+    return(numberofspecies_plotly)
+  })
+  
+  # Render the Shannon Index bar chart
+  output$measo_shannon_plot <- plotly::renderPlotly({
+    req(measo_diversity_metrics())
+    
+    plot_data <- measo_diversity_metrics()
+    
+    p <- ggplot(plot_data, aes(x = `MEASO_Region`, y = `Shannon Index`, fill = `MEASO_Region`)) +
+      geom_bar(stat = "identity") +
+      labs(x = NULL, y = "Shannon Index") +
+      theme_minimal() +
+      theme(legend.position = "none",
+            axis.x.text = element_text(angle = 45)) +
+      scale_fill_viridis_d()
+    
+    shannon_plotly <- plotly::ggplotly(p, tooltip = c("x", "y")) %>%
+      layout(xaxis = list(tickangle = 45))
+    return(shannon_plotly)
+  })
+  
+  # Render the Simpson Index bar chart
+  output$measo_simpson_plot <- plotly::renderPlotly({
+    req(measo_diversity_metrics())
+    
+    plot_data <- measo_diversity_metrics()
+    
+    p <- ggplot(plot_data, aes(x = `MEASO_Region`, y = `Simpson Index`, fill = `MEASO_Region`)) +
+      geom_bar(stat = "identity") +
+      labs(x = NULL, y = "Simpson Index") +
+      theme_minimal() +
+      theme(legend.position = "none",
+            axis.x.text = element_text(angle = 45)) +
+      scale_fill_viridis_d()
+    
+    simpson_plotly <- plotly::ggplotly(p, tooltip = c("x", "y")) %>%
+      layout(xaxis = list(tickangle = 45))
+    return(simpson_plotly)
+  })
+  
+  # Render the ES50 bar chart
+  output$measo_es50_plot <- plotly::renderPlotly({
+    req(measo_diversity_metrics())
+    
+    plot_data <- measo_diversity_metrics()
+    
+    p <- ggplot(plot_data, aes(x = `MEASO_Region`, y = `Effective Species Number (ES50)`, fill = `MEASO_Region`)) +
+      geom_bar(stat = "identity") +
+      labs(x = NULL, y = "ES50") +
+      theme_minimal() +
+      theme(legend.position = "none",
+            axis.x.text = element_text(angle = 45)) +
+      scale_fill_viridis_d()
+    
+    ES50_plotly <- plotly::ggplotly(p, tooltip = c("x", "y")) %>%
+      layout(xaxis = list(tickangle = 45))
+    return(ES50_plotly)
+  })
+  
+  
   #### Temporal Diversity ####
   observeEvent(measo_regions_info_sf(), {
     req(measo_regions_info_sf())
@@ -1356,6 +1482,7 @@ server <- function(input, output, session) {
     message("Calculating temporal diversity with window size: ", input$temporal_window)
     calculate_temporal_diversity(df = df, window_size = input$temporal_window)
   })
+  
   
   output$temporal_diversity_plot <- plotly::renderPlotly({
     results <- temporal_diversity_results()
