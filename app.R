@@ -124,49 +124,49 @@ ui <- navbarPage(
     icon = icon("filter"), "Filters",
     fluidRow(
       column(4,
-       wellPanel(
-         h4("Filter by Taxonomy", class = "text-primary"),
-         # The selectizeInput handles everything now
-         selectizeInput(
-           "param_taxon_input",
-           "Taxon Search",
-           choices = NULL,
-           multiple = TRUE,
-           options = list(
-             placeholder = "e.g. Channichthyidae, Stomiiformes, ...",
-             onInitialize = I('function() { this.setValue(""); }'),
-             create = TRUE,
-             maxOptions = Inf
-           )
-         ),
-         actionButton("removeAllTaxaBtn", "Remove All", icon = icon("times"), class = "btn-danger"),
-         hr(),
-         numericInput("param_aphia_id", "Aphia ID", value = NA),
-         numericInput("param_fishbase_id", "FishBase ID", value = NA),
-         numericInput("param_gbif_id", "GBIF ID", value = NA)
-       ),
-        hr(),
-       wellPanel(
-        h4("Display Options", class = "text-primary"),
-        radioGroupButtons("color_by", "Color points by:",
-                          choices = c(
-                            "Family" = "Family",
-                            "Genus" = "Genus",
-                            "Species" = "Species",
-                            "IUCN status" = "iucn_status", 
-                            "Vulnerability" = "Vulnerability"
-                          ),
-                          justified = TRUE, status = "primary",
-                          selected = "Genus"),
-        radioGroupButtons("size_by", "Size points by:",
-                          choices = c("Vulnerability" = "Vulnerability",
-                                      "Length" = "Length_cm"),
-                          justified = TRUE, status = "primary"),
-        hr(),
-        tags$b("Interactive Map Controls:"),
-        p("Use the drawing tools on the map to filter points by a custom polygon."),
-        actionBttn("clear_polygon", "Clear Drawn Polygon", style = "fill", color = "warning")
-        )
+             wellPanel(
+               h4("Filter by Taxonomy", class = "text-primary"),
+               # The selectizeInput handles everything now
+               selectizeInput(
+                 "param_taxon_input",
+                 "Taxon Search",
+                 choices = NULL,
+                 multiple = TRUE,
+                 options = list(
+                   placeholder = "e.g. Channichthyidae, Stomiiformes, ...",
+                   onInitialize = I('function() { this.setValue("Stomiiformes"); }'),
+                   create = TRUE,
+                   maxOptions = Inf
+                 )
+               ),
+               actionButton("removeAllTaxaBtn", "Remove All", icon = icon("times"), class = "btn-danger"),
+               hr(),
+               numericInput("param_aphia_id", "Aphia ID", value = NA),
+               numericInput("param_fishbase_id", "FishBase ID", value = NA),
+               numericInput("param_gbif_id", "GBIF ID", value = NA)
+             ),
+             hr(),
+             wellPanel(
+               h4("Display Options", class = "text-primary"),
+               radioGroupButtons("color_by", "Color points by:",
+                                 choices = c(
+                                   "Family" = "Family",
+                                   "Genus" = "Genus",
+                                   "Species" = "Species",
+                                   "IUCN status" = "iucn_status", 
+                                   "Vulnerability" = "Vulnerability"
+                                 ),
+                                 justified = TRUE, status = "primary",
+                                 selected = "Genus"),
+               radioGroupButtons("size_by", "Size points by:",
+                                 choices = c("Vulnerability" = "Vulnerability",
+                                             "Length" = "Length_cm"),
+                                 justified = TRUE, status = "primary"),
+               hr(),
+               tags$b("Interactive Map Controls:"),
+               p("Use the drawing tools on the map to filter points by a custom polygon."),
+               actionBttn("clear_polygon", "Clear Drawn Polygon", style = "fill", color = "warning")
+             )
       ),
       column(
         4,
@@ -180,7 +180,7 @@ ui <- navbarPage(
           sliderInput("param_deep_depth", "Max. Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
           sliderInput("param_com_shallow_depth", "Common Shallow Depth (m)", min = 0, max = 8000, value = c(0, 8000)),
           sliderInput("param_com_deep_depth", "Common Deep Depth (m)", min = 0, max = 8000, value = c(0, 8000))
-          )
+        )
       ),
       column(
         4,
@@ -197,41 +197,47 @@ ui <- navbarPage(
           pickerInput("param_price", "Price Category", choices = c("All" = "")),
           pickerInput("param_catching_method", "Catching Method", choices = c("All" = "")),
           sliderInput("param_vulnerability", "Vulnerability", min = 0, max = 100, value = c(0, 100))
-          ),
+        ),
         hr(),
+        # Go to map button
         wellPanel(
-          verbatimTextOutput("record_count"),
-          verbatimTextOutput("species_count"),
-          # Go to map button
           actionBttn("go_to_map_button", "Go to map!", style = "fill", color = "primary"),
           actionBttn("reset_button", "Reset All Filters", style = "fill", color = "danger")
-          )
+        )
       )
     )
   ),
-  
+  # --- Active Filters Tab ---
+  tabPanel(
+    icon = icon("list-ul"), "Active Filters",
+    wellPanel(h3("Active Filters", class = "text-primary"),
+              uiOutput("active_filters_ui")
+    ),
+    hr(),
+    wellPanel(verbatimTextOutput("record_count"),
+              verbatimTextOutput("species_count")),
+  ),
   # --- Table Tab ---
   tabPanel(
     icon = icon("table"), "Table",
-    # Table output
     DTOutput("occurrence_table")
-  ),
+  )
+  ,
   
   # --- Spatial Diversity Tab ---
   tabPanel(
     icon = icon("globe"), "Spatial Diversity",
-    
     # Panel for Overall Diversity
     wellPanel(
       h4("Overall Diversity Metrics", class = "text-primary"),
-      p("These indicators are calculated based on all filtered occurrences, including those within any drawn polygon."),
+      p("These indicators are calculated based all 'Active Filters'."),
       DTOutput("diversity_table")
     ),
     
     # Panel for Regional Diversity
     wellPanel(
       h4("Diversity by MEASO Region", class = "text-primary"),
-      p("Explore how diversity metrics vary across different MEASO regions. These calculations are based on the active filters in the 'filters' tab."),
+      p("Explore how diversity metrics vary across different MEASO regions. These calculations are based on the 'Active Filters' excluding the drawn polygon."),
       
       # Use fluidRow for a clean, two-by-two grid layout
       fluidRow(
@@ -325,7 +331,7 @@ ui <- navbarPage(
   )
 )
 
-  
+
 #### 4. SERVER LOGIC ####
 server <- function(input, output, session) {
   
@@ -686,8 +692,6 @@ server <- function(input, output, session) {
   
   observeEvent(input$reset_button, {
     message("--- Resetting Filters ---")
-    values$selected_taxa <- character(0)
-    updateTextInput(session, "active_taxa_display", value = "")
     updateTextInput(session, "param_taxon_input", value = "")
     updateNumericInput(session, "param_aphia_id", value = NA)
     updateNumericInput(session, "param_fishbase_id", value = NA)
@@ -807,8 +811,8 @@ server <- function(input, output, session) {
   
   output$spatial_plot <- renderLeaflet({
     leaflet() %>%
-      addProviderTiles(providers$Esri.OceanBasemap, group = "Esri - Ocean Basemap") %>%
       addProviderTiles(providers$CartoDB.PositronNoLabels, group = "cartoDB - no labels") %>%
+      addProviderTiles(providers$Esri.OceanBasemap, group = "Esri - Ocean Basemap") %>%
       addLayersControl(
         baseGroups = c("Esri - Ocean Basemap", "cartoDB - no labels"),
         overlayGroups = c("MEASO Regions", "drawn_polygon", "Southern Ocean Boundary", "Land"),
@@ -842,9 +846,10 @@ server <- function(input, output, session) {
       ) %>%
       addDrawToolbar(
         targetGroup = "drawn_polygon",
+        position = "bottomright",
         editOptions = editToolbarOptions(selectedPathOptions = selectedPathOptions()),
         polygonOptions = drawPolygonOptions(
-          shapeOptions = drawShapeOptions(fillOpacity = 0.4, color = "red", weight = 3),
+          shapeOptions = drawShapeOptions(fillOpacity = 0.3, color = "red", weight = 3),
           repeatMode = FALSE
         ),
         polylineOptions = FALSE,
@@ -951,12 +956,12 @@ server <- function(input, output, session) {
       radius = ~point_radius_func()(marker_size_val),
       color = ~color_palette_func()(marker_color_val),
       stroke = FALSE,
-      fillOpacity = 0.7,
+      fillOpacity = 0.9,
       popup = ~popup_text
     )
     
     proxy %>% leaflet::addLegend(
-      position = "bottomright",
+      position = "bottomleft",
       pal = color_palette_func(),
       values = df_valid_coords()$marker_color_val,
       title = if (point_color_col() == "Vulnerability") {
@@ -1522,7 +1527,7 @@ server <- function(input, output, session) {
     
     # Text annotation for the Y axis text on the right: not working
     p <- p + annotate("text", x = Inf, y = Inf, label = "Effort (Records)", hjust = 1.1, vjust = 1.5, color = "gray")
-  
+    
     
     plotly::ggplotly(p)
   })
@@ -1651,7 +1656,104 @@ server <- function(input, output, session) {
   observeEvent(input$go_to_map_button, {
     updateNavbarPage(session, "navbar_main", selected = "Display")
   })
+  
+  #### Active filters ####
+  active_filters_summary <- reactive({
+    
+    # Ensure all necessary default ranges are defined
+    req(initial_slider_ranges) 
+    
+    active_filters <- list()
+    
+    # --- 1. Taxon Name Filter (selectizeInput) ---
+    # Active if there are any selected tags
+    if (!is.null(input$param_taxon_input) && length(input$param_taxon_input) > 0) {
+      active_filters[["Taxa"]] <- paste(input$param_taxon_input, collapse = ", ")
+    }
+    
+    # --- 2. ID Filters (Numeric Inputs) ---
+    # Active if the value is not NA (or NULL)
+    if (!is.null(input$param_aphia_id) && !is.na(input$param_aphia_id)) {
+      active_filters[["Aphia ID"]] <- as.character(input$param_aphia_id)
+    }
+    if (!is.null(input$param_fishbase_id) && !is.na(input$param_fishbase_id)) {
+      active_filters[["FishBase ID"]] <- as.character(input$param_fishbase_id)
+    }
+    if (!is.null(input$param_gbif_id) && !is.na(input$param_gbif_id)) {
+      active_filters[["GBIF ID"]] <- as.character(input$param_gbif_id)
+    }
+    
+    # --- 3. Slider Filters (Range Check) ---
+    
+    # Helper function to check if a slider range differs from the default
+    check_slider <- function(input_value, default_range, display_name) {
+      # Check if the slider is present, has two values, and those values are NOT the default
+      if (!is.null(input_value) && length(input_value) == 2 && 
+          !isTRUE(all.equal(input_value, default_range))) {
+        
+        active_filters[[display_name]] <<- paste(input_value[1], input_value[2], sep = " - ")
+      }
+    }
+    
+    check_slider(input$param_length_cm, initial_slider_ranges$length, "Length (cm)")
+    check_slider(input$param_weight, initial_slider_ranges$weight, "Weight (g)")
+    check_slider(input$param_vulnerability, initial_slider_ranges$vulnerability, "Vulnerability (%)")
+    
+    check_slider(input$param_shallow_depth, initial_slider_ranges$shallow_depth, "Shallow Depth (m)")
+    check_slider(input$param_deep_depth, initial_slider_ranges$deep_depth, "Deep Depth (m)")
+    check_slider(input$param_com_deep_depth, initial_slider_ranges$com_deep_depth, "Comm. Deep Depth (m)")
+    check_slider(input$param_com_shallow_depth, initial_slider_ranges$com_shallow_depth, "Comm. Shallow Depth (m)")
+    
+    # --- 4. Select/Picker Filters (Check for empty string "") ---
+    # Assumes the default (unfiltered) state for these is an empty string ("")
+    
+    if (input$param_AnaCat != "") {
+      active_filters[["Migration strategy"]] <- input$param_AnaCat
+    }
+    if (input$param_DemersPelag != "") {
+      active_filters[["Watercolumn niche"]] <- input$param_DemersPelag
+    }
+    if (input$param_iucn != "") {
+      active_filters[["IUCN Status"]] <- input$param_iucn
+    }
+    if (input$param_importance != "") {
+      active_filters[["Importance"]] <- input$param_importance
+    }
+    if (input$param_price != "") {
+      active_filters[["Price"]] <- input$param_price
+    }
+    if (input$param_catching_method != "") {
+      active_filters[["Catching Method"]] <- input$param_catching_method
+    }
+    
+    # --- 5. Spatial Filter ---
+    current_wkt <- drawn_polygon_wkt()
+    if (!is.null(current_wkt)) {
+      active_filters[["Spatial Polygon"]] <- current_wkt
+    }
+    
+    return(active_filters)
+  })
+  
+  # Render the formatted list of active filters
+  output$active_filters_ui <- renderUI({
+    
+    filter_list <- active_filters_summary() # Get the list from the reactive
+    
+    if (length(filter_list) == 0) {
+      return(tags$p(tags$em("No custom filters are currently active.")))
+    } else {
+      # Convert the list into a series of nicely formatted HTML paragraphs
+      filter_html <- lapply(names(filter_list), function(name) {
+        tags$p(
+          tags$strong(name, ":"), 
+          tags$span(filter_list[[name]])
+        )
+      })
+      return(tagList(filter_html))
+    }
+  })
+  
 }
-  
+
 shinyApp(ui = ui, server = server)
-  
