@@ -108,9 +108,13 @@ ui <- navbarPage(
     "))
     ),
     span("SOfish Diversity"),
-    tags$img(
-      src = "https://github.com/thesnakeguy/SOfish-Diversity/blob/main/South%20georgia%20icefish_bgless.png?raw=true",
-      class = "fish-image"
+    tags$a(
+      href = "https://www.fishbase.se/summary/Pseudochaenichthys-georgianus.html",
+      target = "_blank",  # Opens the link in a new tab
+      tags$img(
+        src = "https://github.com/thesnakeguy/SOfish-Diversity/blob/main/South%20georgia%20icefish_bgless.png?raw=true",
+        class = "fish-image"
+      )
     )
   ),
   theme = modern_theme,
