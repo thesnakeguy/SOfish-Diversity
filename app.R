@@ -62,7 +62,9 @@ modern_theme <- bs_theme(
   code_font = font_google("Fira Code")
 )
 
+
 ui <- navbarPage(
+  bg = "lightgrey", 
   id = "navbar_main",
   tagList(
     tags$head(
@@ -107,7 +109,7 @@ ui <- navbarPage(
     ),
     span("SOfish Diversity"),
     tags$img(
-      src = "https://www.seafoodwatch.org/globalassets/sfw-data-blocks/species/toothfish/chilean-seabass.png",
+      src = "https://github.com/thesnakeguy/SOfish-Diversity/blob/main/South%20georgia%20icefish_bgless.png?raw=true",
       class = "fish-image"
     )
   ),
@@ -161,11 +163,13 @@ ui <- navbarPage(
                radioGroupButtons("size_by", "Size points by:",
                                  choices = c("Vulnerability" = "Vulnerability",
                                              "Length" = "Length_cm"),
-                                 justified = TRUE, status = "primary"),
-               hr(),
-               tags$b("Interactive Map Controls:"),
-               p("Use the drawing tools on the map to filter points by a custom polygon."),
-               actionBttn("clear_polygon", "Clear Drawn Polygon", style = "fill", color = "warning")
+                                 justified = TRUE, status = "primary")
+             ),
+             hr(),
+             wellPanel(
+               h4("Spatial Polygon Filter", class = "text-primary"),
+               textInput("wkt_input_box", "Use the drawing tools on the map to filter points by a custom polygon or supply a WKT string(e.g. POLYGON((...))).", value = ""),
+               actionBttn("clear_polygon", "Clear Polygon Filter", style = "fill", color = "warning")
              )
       ),
       column(
@@ -420,25 +424,106 @@ server <- function(input, output, session) {
     message("--- Initial filter setup complete ---")
   }, once = TRUE, ignoreNULL = FALSE)
   
-  #### Drawn Polygon ####
+  #### Spatial Filter Management (Drawn Polygon OR WKT String) ####
+  # Use one reactiveVal to store the WKT string, regardless of its source (drawn or text box)
   drawn_polygon_wkt <- reactiveVal(NULL)
   
+  # --- 1. Event: Polygon Drawn on Map ---
   observeEvent(input$spatial_plot_draw_new_feature, {
     feature <- input$spatial_plot_draw_new_feature
     if (feature$properties$feature_type == "polygon") {
+      
       lon_lat_coords <- feature$geometry$coordinates[[1]]
       wkt_coords <- paste(sapply(lon_lat_coords, function(x) paste(x[1], x[2])), collapse = ", ")
       polygon_wkt_str <- paste0("POLYGON((", wkt_coords, "))")
       
+      # Action 1: Update the central filter value (Drawn polygons are inherently valid)
       drawn_polygon_wkt(polygon_wkt_str)
+      
+      # Action 2 (Mutual Exclusivity): Clear the WKT input box
+      updateTextInput(session, "wkt_input_box", value = "")
+      
       message("Polygon drawn and WKT stored: ", polygon_wkt_str)
     }
   })
   
+  # --- 2. Event: WKT String Supplied via Text Box (With Robust Ring Validation) ---
+  observeEvent(input$wkt_input_box, {
+    wkt_string <- trimws(input$wkt_input_box)
+    
+    # 2a. Check for non-empty string starting with POLYGON
+    if (nchar(wkt_string) > 0 && grepl("^POLYGON\\(\\(", toupper(wkt_string))) {
+      
+      validation_result <- tryCatch({
+        # Use sf::st_as_sfc to validate the WKT string locally (syntax check)
+        sfc_obj <- st_as_sfc(wkt_string)
+        
+        # --- CRITICAL FIX: Check if the polygon is explicitly closed (ring validation) ---
+        coords <- st_coordinates(sfc_obj)
+        
+        # For a Polygon, the coordinates array structure is: 
+        # X, Y, L1/L2/L3 (part of polygon), ID (polygon index)
+        
+        # Find the starting and ending coordinates of the *first* ring (L1)
+        # Check the coordinates of the exterior ring (L1)
+        ring_coords <- coords[coords[, "L1"] == 1, ] 
+        
+        first_coord <- ring_coords[1, c("X", "Y")]
+        last_coord <- ring_coords[nrow(ring_coords), c("X", "Y")]
+        
+        # Check for near-equality to account for floating-point issues
+        if (isTRUE(all.equal(first_coord, last_coord, tolerance = 1e-9))) {
+          TRUE # Success: WKT is valid and the ring is closed
+        } else {
+          stop("Polygon is not closed. The first and last coordinates must be identical (a closed ring).")
+        }
+        
+      }, error = function(e) {
+        # Catch either the sf parsing error OR the custom 'not closed' error
+        message("WKT Validation Error: ", conditionMessage(e))
+        showNotification(
+          paste("Invalid WKT: ", conditionMessage(e), "."),
+          type = "error", duration = 8
+        )
+        FALSE # Return FALSE on error
+      })
+      
+      if (isTRUE(validation_result)) {
+        # Validation succeeded
+        
+        # Action 1: Update the central filter value
+        drawn_polygon_wkt(wkt_string)
+        
+        # Action 2 (Mutual Exclusivity): Clear any existing polygon drawn on the map
+        leafletProxy("spatial_plot") %>% clearGroup("drawn_polygon")
+        
+        message("WKT string supplied and successfully validated.")
+        
+      } else {
+        # Validation failed, clear the filter to prevent crashing the data reactive
+        drawn_polygon_wkt(NULL) 
+        message("Invalid WKT supplied. Spatial filter cleared.")
+      }
+      
+    } else if (nchar(wkt_string) == 0) {
+      # If the user clears the text box, clear the filter
+      drawn_polygon_wkt(NULL)
+      message("WKT input box cleared. Spatial filter removed.")
+      
+    }
+  }, ignoreInit = TRUE)
+  
+  
+  # --- 3. Event: Clear Button Pressed ---
   observeEvent(input$clear_polygon, {
+    # Action 1: Clear the central filter value
     drawn_polygon_wkt(NULL)
+    
+    # Action 2: Clear the visual elements
     leafletProxy("spatial_plot") %>% clearGroup("drawn_polygon")
-    message("Drawn polygon cleared from map and filter.")
+    updateTextInput(session, "wkt_input_box", value = "")
+    
+    message("Drawn polygon and WKT input cleared from map and filter.")
   })
   
   #### Taxon Filtering ####
@@ -576,6 +661,7 @@ server <- function(input, output, session) {
   }
   
   #### Filtered Data ####
+  # Global filtering
   filtered_data_from_db <- reactive({
     req(
       initial_slider_ranges$length,
@@ -632,6 +718,7 @@ server <- function(input, output, session) {
     df
   })
   
+  # MEASO filtering (no spatial filters)
   filtered_data_for_measo_diversity <- reactive({
     req(
       initial_slider_ranges$length,
