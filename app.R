@@ -228,9 +228,9 @@ ui <- navbarPage(
   # --- Table Tab ---
   tabPanel(
     icon = icon("table"), "Table",
-    DTOutput("occurrence_table")
-  )
-  ,
+    DTOutput("occurrence_table"),
+    downloadButton(outputId = "download_filter_table", label = ".csv")
+  ),
   
   # --- Spatial Diversity Tab ---
   tabPanel(
@@ -246,8 +246,6 @@ ui <- navbarPage(
     wellPanel(
       h4("Diversity by MEASO Region", class = "text-primary"),
       p("Explore how diversity metrics vary across different MEASO regions. These calculations are based on the 'Active Filters' excluding the drawn polygon."),
-      
-      # Use fluidRow for a clean, two-by-two grid layout
       fluidRow(
         column(6,
                h5("Number of Species", class = "text-center"),
@@ -258,8 +256,6 @@ ui <- navbarPage(
                plotly::plotlyOutput("measo_shannon_plot", height = "250px")
         )
       ),
-      
-      # Second row for the remaining two charts
       fluidRow(
         column(6,
                h5("Simpson Index", class = "text-center"),
@@ -270,8 +266,9 @@ ui <- navbarPage(
                plotly::plotlyOutput("measo_es50_plot", height = "250px")
         )
       ),
-      
-      DTOutput("measo_diversity_table")
+      DTOutput("measo_diversity_table"),
+      downloadButton(outputId = "download_measodiversity_table", label = ".csv"),
+      hr()
     )
   ),
   # --- Temporal Diversity Tab ---
@@ -298,7 +295,9 @@ ui <- navbarPage(
         h3("Temporal diversity: Moving Average"),
         plotly::plotlyOutput("temporal_diversity_plot"),
         hr(),
-        DTOutput("temporal_diversity_table")
+        DTOutput("temporal_diversity_table"),
+        downloadButton(outputId = "download_temporal_diversity_table", label = ".csv"),
+        hr()
       )
     )
   ),
@@ -677,7 +676,7 @@ server <- function(input, output, session) {
       initial_slider_ranges$weight
     )
     
-    input$param_taxon
+    input$param_taxon_input
     input$param_aphia_id
     input$param_fishbase_id
     input$param_gbif_id
@@ -734,7 +733,7 @@ server <- function(input, output, session) {
       initial_slider_ranges$weight
     )
     
-    input$param_taxon
+    input$param_taxon_input
     input$param_aphia_id
     input$param_fishbase_id
     input$param_gbif_id
@@ -1100,6 +1099,7 @@ server <- function(input, output, session) {
   })
   
   #### Spatial Diversity ####
+  # filtered data table
   output$occurrence_table <- DT::renderDataTable({
     df_for_table <- filtered_data_from_db()
     
@@ -1109,11 +1109,18 @@ server <- function(input, output, session) {
     
     DT::datatable(
       df_for_table,
-      options = list(pageLength = 10, scrollX = TRUE),
-      rownames = FALSE
+      options = list(
+        pageLength = 10,
+        scrollX = TRUE
+      ),
+      rownames = FALSE,
+      style = 'auto'
     )
   })
   
+  
+  ### Diversity metrics tables ####
+  ## Overall diversity table
   diversity_metrics <- reactive({
     message("--- Calculating overall diversity metrics ---")
     
@@ -1189,6 +1196,7 @@ server <- function(input, output, session) {
     )
   })
   
+  ## MEASO diversity table
   measo_regions_info_sf <- reactive({
     req(measoshapes::measo_regions05)
     req(measo_names)
@@ -1368,6 +1376,7 @@ server <- function(input, output, session) {
       rownames = FALSE
     )
   })
+  
   
   # Create bar plots for MEASO diversity 
   # Render the Species Count bar chart
@@ -1649,6 +1658,7 @@ server <- function(input, output, session) {
     )
   })
   
+  
   #### H3 Polygons ####
   rv <- reactiveValues(
     h3_polygons = NULL
@@ -1747,6 +1757,43 @@ server <- function(input, output, session) {
   observeEvent(input$go_to_map_button, {
     updateNavbarPage(session, "navbar_main", selected = "Display")
   })
+  
+  #### Download handlers ####
+  
+  # Make downloadhandle for filtered occurrences
+  output$download_filter_table <- downloadHandler(
+    filename = function() {
+      paste0("SOfishDiversity_OccTable_", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      cat("Download triggered\n")
+      df_for_table <- filtered_data_from_db()
+      cat("Rows:", nrow(df_for_table), "\n")
+      write.csv(df_for_table, file, row.names = FALSE)
+    }
+  )
+  
+  # Make downloadhandle for measo diversity table
+  output$download_measodiversity_table <- downloadHandler(
+    filename = function() {
+      paste0("SOfishDiversity_MEASODiversityTable_", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      df_measodiversity_table <- measo_diversity_metrics()
+      write.csv(df_measodiversity_table, file, row.names = FALSE)
+    }
+  )
+  
+  # Make downloadhandler for temporal diversity table
+  output$download_temporal_diversity_table <- downloadHandler(
+    filename = function() {
+      paste0("SOfishDiversity_TemporalDiversityTable_", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      df_temporaldiversity_table <- temporal_diversity_results()
+      write.csv(df_temporaldiversity_table, file, row.names = FALSE)
+    }
+  )
   
   #### Active filters ####
   active_filters_summary <- reactive({
