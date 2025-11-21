@@ -29,5 +29,4 @@ We recommend citing of data sources and features that are build in **SOfish Dive
 - OBIS (2025). Ocean Biodiversity Information System (OBIS). Available from [https://www.obis.org](https://www.obis.org).
 
 **GBIF**
-- Cite the doi of the GBIF export: https://doi.org/10.15468/dl.uf8fd2
 - GBIF (2025). Global Biodiversity Information Facility (GBIF). Available from [https://www.gbif.org](https://www.gbif.org).

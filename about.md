@@ -30,8 +30,10 @@ This application allows you to explore the diversity of fish species in the Sout
 <div style="background-color: #f0f0f0; border-radius: 10px; padding: 15px; margin: 10px 0; border: 1px solid #d3d3d3;">
 <span style="font-size: 0.8em;">
   <strong>License and Citation</strong><br>
-  This application is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>. If you use this tool or data in your research, please cite the relevant data sources (see 'Cite Us' tab) and this application.<br>
+  This application is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>. If you use this tool or data in your research, please cite the relevant data sources and this application.<br>
+  GBIF Occurrence Download: <a href="https://doi.org/10.15468/dl.uf8fd2" target="_blank">https://doi.org/10.15468/dl.uf8fd2</a>
 </span>
+<br>
 <span style="font-size: 0.8em;">
   <strong>Source Code and Issues</strong><br>
   <a href="https://github.com/thesnakeguy/SOfish-Diversity" target="_blank">https://github.com/thesnakeguy/SOfish-Diversity</a>
