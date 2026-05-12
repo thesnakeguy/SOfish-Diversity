@@ -253,109 +253,105 @@ final_taxonomy_df <- flattened_taxonomy_df %>%
 # Annotate occurrence records with taxonomy
 Occ_taxonomy <- left_join(cleaned_coords_data, final_taxonomy_df, by = "scientificName")
 
+
 # ==============================================================================
-# 9. GET TRAIT DATA
+# 9. GET VALID NAME, IDs and RAMS TAG
 # ==============================================================================
-# 9.1 FISHBASE TRAITS
-# Get unique scientific names
+
+# 1. Clean unique names
 unique_scientific_names <- unique(Occ_taxonomy$scientificName)
+unique_scientific_names <- unique_scientific_names[nzchar(unique_scientific_names) & !is.na(unique_scientific_names)]
 message(paste("\nFound", length(unique_scientific_names), "unique scientific names for trait lookup."))
 
-# Initialize lookup table for IDs
-species_id_lookup <- tibble(
-  scientificName = character(),
-  AphiaID = integer(),
-  FishBaseID = integer(),
-  GbifID = integer()
-)
+# 2. VECTORIZED WORMS/FISHBASE LOOKUP 
+message("Performing vectorized WoRMS lookup...")
+# wm_name2id_ returns a list; we simplify it to a vector
+aphia_ids_raw <- worrms::wm_name2id_(unique_scientific_names)
+aphia_ids_raw <- unlist(aphia_ids_raw, use.names = FALSE)
 
-# Function to check if the species is in RAMS
+# Get valid ID/Names for all found IDs in bulk
+aphia_records <- wm_record_(aphia_ids_raw)
+aphia_ids_valid <- sapply(aphia_records, function(df) df$valid_AphiaID)
+scientificName_valid <- sapply(aphia_records, function(df) df$valid_name) %>% unname()
+
+fb_df <- worrms::wm_external_(id = aphia_ids_valid, type = "fishbase") %>% stack() 
+colnames(fb_df) <- c("Fishbase","Aphia")
+fb_df$Aphia <- as.integer(as.character(fb_df$Aphia))
+Aphia_data <- data.frame(scientificName = scientificName_valid,
+                         originalName = unique_scientific_names, #this is the species name given in the dataset
+                         aphia_id = as.integer(aphia_ids_valid))
+Aphia_data <- left_join(Aphia_data, fb_df, by = join_by(aphia_id == Aphia))
+
+# 3. RAMS CHECK FUNCTION
 check_rams <- function(aphia_id) {
+  if(is.na(aphia_id)) return(NA_character_)
   url <- paste0("https://www.marinespecies.org/RAMS/aphia.php?p=taxdetails&id=", aphia_id)
   
-  page <- httr::GET(url)
-  
-  if (grepl("Not found", page, ignore.case = TRUE)) {
-    return("no")
-  } else {
-    return("yes")
-  }
+  res <- tryCatch({
+    resp <- httr::GET(url)
+    cont <- httr::content(resp, as = "text", encoding = "UTF-8")
+    if (grepl("Not found", cont, ignore.case = TRUE)) "no" else "yes"
+  }, error = function(e) return("error"))
+  return(res)
 }
 
-# Loop through unique species to fetch IDs
-unique_scientific_names <- unique_scientific_names[nzchar(unique_scientific_names)] #remove empty values
-for (sci_name in unique_scientific_names) {
-  message(paste("Processing unique species:", sci_name))
-  aphia_id <- NA_integer_
-  fb_id <- NA_integer_
+# 4. LOOP FOR GBIF ID AND POPULATE RAMS TAG
+# Initialize the final lookup table
+species_id_lookup <- tibble()
+
+for (i in 1:nrow(Aphia_data)) {
+  original_name <- Aphia_data$originalName[i]
+  sci_name <- Aphia_data$scientificName[i]
+  aphia_id <- Aphia_data$aphia_id[i]
+  # Pull the Fishbase ID that we already joined in Step 2
+  fb_id    <- Aphia_data$Fishbase[i] 
+  
+  message(paste("Processing supplemental IDs for:", sci_name))
+  
   gbif_id <- NA_integer_
   
-  # Get AphiaID
-  aphia_id_result <- tryCatch({
-    worrms::wm_name2id(name = sci_name)
-  }, error = function(e) {
-    message(paste("Error getting AphiaID for", sci_name, ":", e$message))
-    return(NULL)
-  })
-  if (is.integer(aphia_id_result) && length(aphia_id_result) > 0) {
-    aphia_id <- aphia_id_result[1]
-  } else if (is.data.frame(aphia_id_result) && nrow(aphia_id_result) > 0) {
-    aphia_id <- aphia_id_result$AphiaID[1]
-  }
-  
-  # Get FishBaseID (for two-word species)
-  is_two_word_species <- length(strsplit(sci_name, " ")[[1]]) == 2
-  if (!is.na(aphia_id) && is_two_word_species) {
-    fb_id_result <- tryCatch({
-      worrms::wm_external(id = aphia_id, type = "fishbase")
-    }, error = function(e) {
-      message(paste("Error getting FishBaseID for AphiaID", aphia_id, ":", e$message))
-      return(NULL)
-    })
-    if (is.integer(fb_id_result) && length(fb_id_result) > 0) {
-      fb_id <- fb_id_result[1]
-    } else if (is.data.frame(fb_id_result) && nrow(fb_id_result) > 0) {
-      fb_id_row <- fb_id_result %>% filter(type == "FishBase")
-      if (nrow(fb_id_row) > 0) {
-        fb_id <- as.integer(fb_id_row$identifier[1])
-      }
-    }
-  }
-  
-  # Get GBIF ID with retry
-  gbif_result <- NULL
+  # Get GBIF ID with retry logic
   attempts <- 0
   max_attempts <- 3
-  while (is.null(gbif_result) && attempts < max_attempts) {
+  while (attempts < max_attempts) {
     attempts <- attempts + 1
-    message(paste("Attempting GBIF ID lookup for", sci_name, "(Attempt", attempts, "of", max_attempts, ")"))
     gbif_result <- tryCatch({
       rgbif::name_backbone(name = sci_name)
-    }, error = function(e) {
-      message(paste("Error getting GBIF ID for", sci_name, ":", e$message))
-      Sys.sleep(2)
-      return(NULL)
-    })
-    if (!is.null(gbif_result) && nrow(gbif_result) > 0 && "usageKey" %in% names(gbif_result)) {
+    }, error = function(e) NULL)
+    
+    # Check if we got a valid result from GBIF
+    if (!is.null(gbif_result) && !is.null(gbif_result$usageKey)) {
       gbif_id <- as.integer(gbif_result$usageKey[1])
       break
     }
+    Sys.sleep(0.5) 
   }
   
-  # Append to lookup table
-  current_species_ids <- tibble(
-    scientificName = sci_name,
-    AphiaID = aphia_id,
-    FishBaseID = fb_id,
-    GbifID = if (!is.null(gbif_result)) as.integer(gbif_result$usageKey[1]) else NA_integer_,
-    RAMS_species = ifelse(!is.na(aphia_id), check_rams(aphia_id), NA_character_) # add column with a RAMS flag
-  )
-  species_id_lookup <- bind_rows(species_id_lookup, current_species_ids)
+  # Append results to the lookup table
+  # We use the RAMS check function here as it requires a per-ID URL check
+  species_id_lookup <- bind_rows(species_id_lookup, tibble(
+    originalName = original_name,
+    scientificName_valid = sci_name,
+    AphiaID        = aphia_id,
+    FishBaseID     = fb_id,
+    GbifID         = gbif_id,
+    RAMS_species   = check_rams(aphia_id)
+  ))
+  
+  # Polite pause to avoid hitting GBIF/RAMS servers too hard
   Sys.sleep(0.1)
 }
 
+# Final cleanup: Remove duplicates if any were generated during lookup
+species_id_lookup <- distinct(species_id_lookup)
+
+# ==============================================================================
+# 10. GET TRAIT DATA
+# ==============================================================================
+# 10.1 FISHBASE TRAITS
+
 # Join IDs to occurrence data
-Occ_taxonomy_with_ids <- left_join(Occ_taxonomy, species_id_lookup, by = "scientificName")
+Occ_taxonomy_with_ids <- left_join(Occ_taxonomy, species_id_lookup, by = join_by(scientificName == originalName))
 
 # Fetch FishBase traits
 message("\nFetching trait data from FishBase...")
@@ -380,8 +376,14 @@ selected_traits <- fishbase_species_traits %>%
 # Join traits to occurrence data
 final_data_with_traits <- left_join(Occ_taxonomy_with_ids, selected_traits, by = "FishBaseID")
 
-# 9.2 IUCN RED LIST STATUS
-# Function to retrieve IUCN status
+# Populate the "Species" column with the scientificName_valid of it has genus and species level information. IMPORTANT
+final_data_with_traits <- final_data_with_traits %>%
+  mutate(Species = ifelse(str_count(scientificName_valid, "\\S+") == 2, 
+                          scientificName_valid, 
+                          Species))
+
+# 10.2 IUCN RED LIST STATUS
+# Function to retrieve IUCN status (make sure to put your key in .Renviron as IUCN_REDLIST_KEY)
 get_iucn_status <- function(genus, species) {
   full_name <- paste(genus, species)
   if (is.na(genus) || is.na(species) || genus == "" || species == "") {
@@ -431,33 +433,39 @@ iucn_lookup_table <- unique_species_to_lookup %>%
   mutate(iucn_status = iucn_statuses, scientificName = paste(Genus, Species))
 
 # Join IUCN status to main dataset
-final_data_with_traits <- final_data_with_traits %>%
-  left_join(iucn_lookup_table %>% select(scientificName, iucn_status), by = "scientificName") %>%
-  mutate(
-    iucn_status = na_if(iucn_status, "NA"),
-    iucn_status = replace_na(iucn_status, "NE"),
-    Fishbase_url = case_when(
-      !is.na(Species) & grepl(" ", Species) ~
-        paste0("https://www.fishbase.se/summary/", gsub(" ", "-", Species, fixed = TRUE)),
-      TRUE ~ NA_character_
-    )
-  )
-
-# Rename columns where necessary
-names(final_data_with_traits)[names(final_data_with_traits) == "basisOfRecord_clean"] <- "basisOfRecord"
-
+final_data_with_traits_XXX <- final_data_with_traits %>%
+  left_join(iucn_lookup_table[,3:4], by = join_by(scientificName_valid == scientificName)) %>%
+  mutate(iucn_status = na_if(iucn_status, "NA"),
+         iucn_status = replace_na(iucn_status, "NE"),
+         Fishbase_url = case_when(
+          !is.na(Species) & grepl(" ", Species) ~
+            paste0("https://www.fishbase.se/summary/", gsub(" ", "-", Species, fixed = TRUE)),
+          TRUE ~ NA_character_
+        )
+      )
 
 # ==============================================================================
-# 10. CREATE PARQUET FILE
+# 11. DATA CLEAN UP
+# ============================================================================== 
+# Remove basisOfRecord / scientificName
+final_data_with_traits_XXX <- final_data_with_traits_XXX %>% 
+  select(-c(basisOfRecord, scientificName))
+# Rename BasisOfRecord_clean / scientificName_valid
+final_data_with_traits_XXX <- final_data_with_traits_XXX %>%
+  rename(scientificName = scientificName_valid,
+         basisOfRecord = basisOfRecord_clean)
+
+# ==============================================================================
+# 12. CREATE PARQUET FILE
 # ==============================================================================
 parquet_name <- "Actinopterygii_database.parquet"
-arrow::write_parquet(final_data_with_traits, parquet_name)
+arrow::write_parquet(final_data_with_traits_XXX, parquet_name)
 
 # ==============================================================================
-# 11. WRITE/READ TO .TXT FILE
+# 13. WRITE/READ TO .TXT FILE
 # ==============================================================================
 write.table(
-  x = final_data_with_traits,
+  x = final_data_with_traits_XXX,
   file = "Actinopterygii_database.txt",
   sep = ",",
   quote = FALSE,
@@ -466,7 +474,7 @@ write.table(
 final_data_with_traits <- read.table(file = "Actinopterygii_database.txt", sep = ",")
 
 # ==============================================================================
-# 12. LOAD PARQUET DATABASE
+# 14. LOAD PARQUET DATABASE
 # ==============================================================================
 con <- dbConnect(duckdb::duckdb(), dbdir = "Actinopterygii_database.parquet", read_only = FALSE)
 dbGetQuery(con, "SELECT * FROM 'Actinopterygii_database.parquet' WHERE Vulnerability > 75")
