@@ -264,7 +264,7 @@ final_taxonomy_df <- flattened_taxonomy_df %>%
   select(any_of(desired_taxon_levels))
 
 # Annotate occurrence records with taxonomy
-Occ_taxonomy <- left_join(cleaned_coords_data, final_taxonomy_df, by = "scientificName")
+Occ_taxonomy <- left_join(final_taxonomy_df, cleaned_coords_data, by = "scientificName")
 
 
 # ==============================================================================
