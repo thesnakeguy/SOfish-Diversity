@@ -27,6 +27,7 @@ library(dbplyr)       # Database dplyr backend (dbGetQuery)
 library(rredlist)     # IUCN Red List data (rl_species)
 library(stringr)      # String manipulation (str_split, gsub)
 library(data.table)   # Fast data reading/writing (fread)
+library(caret)        # To create data folds
 
 # Set working directory
 setwd("C:/Users/pdeschepper/OneDrive - Institute of Natural Sciences/Desktop/WORK/ADVANCE/VRI/Rcode/SOfish_diversity/Cleaned/")
@@ -143,7 +144,7 @@ obis_data <- obis_results
 
 # Define columns to keep from both datasets
 obis_cols_to_keep <- c("scientificName", "decimalLatitude", "decimalLongitude", "basisOfRecord", "year", "dataset_id", "issues")
-gbif_cols_to_keep <- c("species", "decimalLatitude", "decimalLongitude", "basisOfRecord", "year", "datasetKey", "issues")
+gbif_cols_to_keep <- c("species", "decimalLatitude", "decimalLongitude", "basisOfRecord", "year", "datasetKey", "issues", "taxonRank", "genus","family","order")
 
 # Select and rename columns for consistency
 obis_selected <- obis_results %>%
@@ -160,11 +161,23 @@ gbif_selected <- gbif_data %>%
     basisOfRecord = as.character(basisOfRecord),
     year = as.factor(year),
     source = "gbif",
-    scientificName = as.character(species),
+    scientificName = case_when(
+      as.character(taxonRank) == "SPECIES"    ~ as.character(species),
+      as.character(taxonRank) == "SUBSPECIES" ~ as.character(species), # We don't wont to go to subspecies level
+      as.character(taxonRank) == "GENUS"      ~ as.character(genus),
+      as.character(taxonRank) == "FAMILY"     ~ as.character(family),
+      as.character(taxonRank) == "ORDER"      ~ as.character(order),
+      as.character(taxonRank) == "UNRANKED"   ~ as.character(species), # keep species, some are NA, but we filter them out afterwards
+      TRUE                                    ~ NA_character_
+    ),
     datasetID = datasetKey
   ) %>%
   select(-species) %>%
-  select(-datasetKey)
+  select(-datasetKey) %>%
+  select(-taxonRank) %>%
+  select(-genus) %>%
+  select(-family) %>%
+  select(-order)
 
 # Merge OBIS and GBIF data
 merged_data <- bind_rows(gbif_selected, obis_selected)
@@ -263,47 +276,90 @@ unique_scientific_names <- unique(Occ_taxonomy$scientificName)
 unique_scientific_names <- unique_scientific_names[nzchar(unique_scientific_names) & !is.na(unique_scientific_names)]
 message(paste("\nFound", length(unique_scientific_names), "unique scientific names for trait lookup."))
 
-# 2. VECTORIZED WORMS/FISHBASE LOOKUP 
+# 2. WoRMS LOOKUP — preserve alignment between input name and AphiaID
 message("Performing vectorized WoRMS lookup...")
-# wm_name2id_ returns a list; we simplify it to a vector
+
 aphia_ids_raw <- worrms::wm_name2id_(unique_scientific_names)
-aphia_ids_raw <- unlist(aphia_ids_raw, use.names = FALSE)
+# wm_name2id_() returns a named list; NULL entries = name not found in WoRMS
+# Build a lookup table BEFORE unlisting so we keep the name↔ID mapping
+aphia_lookup <- data.frame(
+  originalName = names(aphia_ids_raw),                          # input name
+  aphia_id_raw = sapply(aphia_ids_raw, function(x)              # NA if not found
+    if (is.null(x) || length(x) == 0) NA_integer_ else as.integer(x[1]))
+)
 
-# Get valid ID/Names for all found IDs in bulk
-aphia_records <- wm_record_(aphia_ids_raw)
-aphia_ids_valid <- sapply(aphia_records, function(df) df$valid_AphiaID)
-scientificName_valid <- sapply(aphia_records, function(df) df$valid_name) %>% unname()
+message(paste(sum(is.na(aphia_lookup$aphia_id_raw)), "names had no WoRMS match and will be skipped."))
+# Keep only matched names for the bulk record fetch
+aphia_lookup_found <- aphia_lookup[!is.na(aphia_lookup$aphia_id_raw), ]
 
-fb_df <- worrms::wm_external_(id = aphia_ids_valid, type = "fishbase") %>% stack() 
-colnames(fb_df) <- c("Fishbase","Aphia")
-fb_df$Aphia <- as.integer(as.character(fb_df$Aphia))
-Aphia_data <- data.frame(scientificName = scientificName_valid,
-                         originalName = unique_scientific_names, #this is the species name given in the dataset
-                         aphia_id = as.integer(aphia_ids_valid))
-Aphia_data <- left_join(Aphia_data, fb_df, by = join_by(aphia_id == Aphia))
+# 3. Fetch full WoRMS records and extract valid AphiaID + valid name
+aphia_records <- worrms::wm_record_(aphia_lookup_found$aphia_id_raw)
 
-# 3. RAMS CHECK FUNCTION
+# wm_record_() also drops NULLs — extract with names intact before assigning
+records_df <- data.frame(
+  aphia_id_raw     = as.integer(names(aphia_records)),
+  aphia_id_valid   = sapply(aphia_records, function(df) as.integer(df$valid_AphiaID)),
+  scientificName_valid = sapply(aphia_records, function(df) df$valid_name),
+  row.names = NULL
+)
+
+# Join back onto aphia_lookup_found by the raw ID (preserves all rows, NAs where no record)
+aphia_lookup_found <- left_join(
+  aphia_lookup_found,
+  records_df,
+  by = "aphia_id_raw"
+)
+
+message(paste(sum(is.na(aphia_lookup_found$aphia_id_valid)), "AphiaIDs returned no WoRMS record."))
+
+# 4. Fetch FishBase IDs in batches (use valid AphiaIDs)
+
+# Remove NAs before batching (rejoin later via left_join)
+aphia_valid_for_fb <- aphia_lookup_found[!is.na(aphia_lookup_found$aphia_id_valid), ]
+
+folds <- caret::createFolds(aphia_valid_for_fb$aphia_id_valid, k = 20, list = TRUE)
+
+fb_list <- vector("list", length(folds))
+for (i in seq_along(folds)) {
+  ids <- aphia_valid_for_fb$aphia_id_valid[folds[[i]]]
+  fb_list[[i]] <- tryCatch(
+    worrms::wm_external_(id = ids, type = "fishbase") %>% stack(),
+    error = function(e) { message("Batch ", i, " failed: ", e$message); NULL }
+  )
+  Sys.sleep(10)
+}
+
+fb_df <- do.call(rbind, fb_list[!sapply(fb_list, is.null)])
+colnames(fb_df) <- c("Fishbase", "aphia_id_valid")
+fb_df$aphia_id_valid <- as.integer(as.character(fb_df$aphia_id_valid))
+
+# 5. Assemble final table — start from ALL input names so nothing is lost
+Aphia_data <- aphia_lookup %>%
+  left_join(aphia_lookup_found, by = c("originalName", "aphia_id_raw")) %>%
+  left_join(fb_df, by = "aphia_id_valid")
+
+message(paste(sum(is.na(Aphia_data$aphia_id_valid)), "names unmatched in final table."))
+
+# 6. RAMS CHECK FUNCTION
 check_rams <- function(aphia_id) {
-  if(is.na(aphia_id)) return(NA_character_)
+  if (length(aphia_id) == 0 || is.na(aphia_id)) return(NA_character_)
   url <- paste0("https://www.marinespecies.org/RAMS/aphia.php?p=taxdetails&id=", aphia_id)
-  
   res <- tryCatch({
     resp <- httr::GET(url)
     cont <- httr::content(resp, as = "text", encoding = "UTF-8")
     if (grepl("Not found", cont, ignore.case = TRUE)) "no" else "yes"
-  }, error = function(e) return("error"))
+  }, error = function(e) "error")
   return(res)
 }
 
-# 4. LOOP FOR GBIF ID AND POPULATE RAMS TAG
+# 7. LOOP FOR GBIF ID AND POPULATE RAMS TAG
 # Initialize the final lookup table
 species_id_lookup <- tibble()
 
 for (i in 1:nrow(Aphia_data)) {
   original_name <- Aphia_data$originalName[i]
-  sci_name <- Aphia_data$scientificName[i]
-  aphia_id <- Aphia_data$aphia_id[i]
-  # Pull the Fishbase ID that we already joined in Step 2
+  sci_name <- Aphia_data$scientificName_valid[i]
+  aphia_id <- Aphia_data$aphia_id_valid[i]
   fb_id    <- Aphia_data$Fishbase[i] 
   
   message(paste("Processing supplemental IDs for:", sci_name))

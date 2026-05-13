@@ -10,13 +10,14 @@ This application allows you to explore the diversity of fish species in the Sout
 * **Diversity Analysis:** The app calculates and displays diversity indicators for your filtered data, both spatially (by MEASO region) and temporally (as a moving average over time).
 * **Temporal Trends:** The **`Temporal Diversity`** tab shows how diversity metrics like the Shannon Index and Species Richness change over time, alongside a measure of sampling effort.
 * **H3 Diversity Grid:** The **`Spatial H3 Polygons`** tab flexibly visualizes different diversity estimators.
+* **Valid species names:** All scientific names and affiliated Aphia ID's are up to date with WoRMS taxonomy.
 
 ***
 
 ### How to Use
 1.  Navigate to the **`Filters`** tab to set your desired criteria.
 2.  Use the map on the **`Display`** tab to visualize the results.
-3.  Draw a polygon on the map to define a custom area of interest.
+3.  Optional: Draw a polygon on the map to define a custom area of interest.
 4.  Check the different tabs to see the calculated diversity indicators and maps based on your filters.
 
 ***
