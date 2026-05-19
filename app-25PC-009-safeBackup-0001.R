@@ -172,11 +172,11 @@ ui <- navbarPage(
              wellPanel(
                h4(icon("draw-polygon"), "Spatial Filter", class = "text-primary"),
                textAreaInput("wkt_input_box", "WKT String (Polygon)", value = "", rows = 3),
-               actionBttn("clear_polygon", "Clear Polygon", icon = icon("eraser"), style = "unite", color = "primary", size = "sm")
+               actionBttn("clear_polygon", "Clear Drawing", style = "jelly", color = "warning", size = "sm")
              ),
              div(style = "padding: 10px;",
-                 actionBttn("go_to_map_button", "Go to Map", icon = icon("map"), style = "unite", color = "primary", block = TRUE),
-                 actionBttn("reset_button", "Reset All Filters", icon = icon("arrow-rotate-left"), style = "unite", color = "primary", block = TRUE)
+                 actionBttn("go_to_map_button", "Apply & View Map", style = "jelly", color = "primary", block = TRUE, icon = icon("check")),
+                 actionBttn("reset_button", "Reset All Filters", style = "jelly", color = "danger", block = TRUE)
              )
       ),
       
@@ -268,10 +268,7 @@ ui <- navbarPage(
                       sidebarLayout(
                         sidebarPanel(
                           h4("Grid Controls", class = "text-primary"),
-                          selectInput("h3_metric", "Metric", choices = c("Richness" = "richness",
-                                                                         "Shannon" = "shannon_diversity",
-                                                                         "Simpson" = "simpson_diversity",
-                                                                         "ES50" = "ES")),
+                          selectInput("h3_metric", "Metric", choices = c("Richness" = "richness", "Shannon" = "shannon_diversity", "ES50" = "ES")),
                           sliderInput("h3_resolution", "H3 Resolution", 0, 15, 3),
                           actionBttn("calculate_h3_polygons", "Run Calculation", color = "primary", style = "jelly", size = "sm")
                         ),
@@ -284,9 +281,7 @@ ui <- navbarPage(
                         h4("Regional Comparisons"),
                         fluidRow(
                           column(6, plotly::plotlyOutput("measo_species_plot", height = "300px")),
-                          column(6, plotly::plotlyOutput("measo_shannon_plot", height = "300px")),
-                          column(6, plotly::plotlyOutput("measo_simpson_plot", height = "300px")),
-                          column(6, plotly::plotlyOutput("measo_es50_plot", height = "300px"))
+                          column(6, plotly::plotlyOutput("measo_shannon_plot", height = "300px"))
                         )
                       )
              )
@@ -359,29 +354,33 @@ server <- function(input, output, session) {
     basis_of_record_choices <- dbGetQuery(con, "SELECT DISTINCT basisOfRecord FROM Actinopterygii_view WHERE basisOfRecord IS NOT NULL AND TRIM(basisOfRecord) <> ''")
     updatePickerInput(session, "param_basis_of_record", choices = sort(basis_of_record_choices$basisOfRecord))
     
-    length_range_raw <- dbGetQuery(con, "
-      SELECT
-        MIN(Length_cm)            AS length_min,            MAX(Length_cm)            AS length_max,
-        MIN(Weight)               AS weight_min,             MAX(Weight)               AS weight_max,
-        MIN(Vulnerability)        AS vuln_min,               MAX(Vulnerability)        AS vuln_max,
-        MIN(DepthRangeShallow)    AS shallow_min,            MAX(DepthRangeShallow)    AS shallow_max,
-        MIN(DepthRangeDeep)       AS deep_min,               MAX(DepthRangeDeep)       AS deep_max,
-        MIN(DepthRangeComDeep)    AS com_deep_min,           MAX(DepthRangeComDeep)    AS com_deep_max,
-        MIN(DepthRangeComShallow) AS com_shallow_min,        MAX(DepthRangeComShallow) AS com_shallow_max
-      FROM Actinopterygii_view
-    ")
-    set_slider <- function(rv_name, input_id, min_col, max_col) {
-      rng <- c(floor(length_range_raw[[min_col]]), ceiling(length_range_raw[[max_col]]))
-      initial_slider_ranges[[rv_name]] <- rng
-      updateSliderInput(session, input_id, min = rng[1], max = rng[2], value = rng)
-    }
-    set_slider("length",           "param_length_cm",        "length_min",      "length_max")
-    set_slider("weight",           "param_weight",            "weight_min",      "weight_max")
-    set_slider("vulnerability",    "param_vulnerability",     "vuln_min",        "vuln_max")
-    set_slider("shallow_depth",    "param_shallow_depth",     "shallow_min",     "shallow_max")
-    set_slider("deep_depth",       "param_deep_depth",        "deep_min",        "deep_max")
-    set_slider("com_deep_depth",   "param_com_deep_depth",    "com_deep_min",    "com_deep_max")
-    set_slider("com_shallow_depth","param_com_shallow_depth", "com_shallow_min", "com_shallow_max")
+    length_range_raw <- dbGetQuery(con, "SELECT MIN(Length_cm) AS min_val, MAX(Length_cm) AS max_val FROM Actinopterygii_view WHERE Length_cm IS NOT NULL")
+    initial_slider_ranges$length <- c(floor(length_range_raw$min_val), ceiling(length_range_raw$max_val))
+    updateSliderInput(session, "param_length_cm", min = initial_slider_ranges$length[1], max = initial_slider_ranges$length[2], value = initial_slider_ranges$length)
+    
+    weight_range_raw <- dbGetQuery(con, "SELECT MIN(Weight) AS min_val, MAX(Weight) AS max_val FROM Actinopterygii_view WHERE Weight IS NOT NULL")
+    initial_slider_ranges$weight <- c(floor(weight_range_raw$min_val), ceiling(weight_range_raw$max_val))
+    updateSliderInput(session, "param_weight", min = initial_slider_ranges$weight[1], max = initial_slider_ranges$weight[2], value = initial_slider_ranges$weight)
+    
+    vulnerability_range_raw <- dbGetQuery(con, "SELECT MIN(Vulnerability) AS min_val, MAX(Vulnerability) AS max_val FROM Actinopterygii_view WHERE Vulnerability IS NOT NULL")
+    initial_slider_ranges$vulnerability <- c(floor(vulnerability_range_raw$min_val), ceiling(vulnerability_range_raw$max_val))
+    updateSliderInput(session, "param_vulnerability", min = initial_slider_ranges$vulnerability[1], max = initial_slider_ranges$vulnerability[2], value = initial_slider_ranges$vulnerability)
+    
+    shallow_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeShallow) AS min_val, MAX(DepthRangeShallow) AS max_val FROM Actinopterygii_view WHERE DepthRangeShallow IS NOT NULL")
+    initial_slider_ranges$shallow_depth <- c(floor(shallow_depth_range_raw$min_val), ceiling(shallow_depth_range_raw$max_val))
+    updateSliderInput(session, "param_shallow_depth", min = initial_slider_ranges$shallow_depth[1], max = initial_slider_ranges$shallow_depth[2], value = initial_slider_ranges$shallow_depth)
+    
+    deep_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeDeep) AS min_val, MAX(DepthRangeDeep) AS max_val FROM Actinopterygii_view WHERE DepthRangeDeep IS NOT NULL")
+    initial_slider_ranges$deep_depth <- c(floor(deep_depth_range_raw$min_val), ceiling(deep_depth_range_raw$max_val))
+    updateSliderInput(session, "param_deep_depth", min = initial_slider_ranges$deep_depth[1], max = initial_slider_ranges$deep_depth[2], value = initial_slider_ranges$deep_depth)
+    
+    com_deep_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeComDeep) AS min_val, MAX(DepthRangeComDeep) AS max_val FROM Actinopterygii_view WHERE DepthRangeComDeep IS NOT NULL")
+    initial_slider_ranges$com_deep_depth <- c(floor(com_deep_depth_range_raw$min_val), ceiling(com_deep_depth_range_raw$max_val))
+    updateSliderInput(session, "param_com_deep_depth", min = initial_slider_ranges$com_deep_depth[1], max = initial_slider_ranges$com_deep_depth[2], value = initial_slider_ranges$com_deep_depth)
+    
+    com_shallow_depth_range_raw <- dbGetQuery(con, "SELECT MIN(DepthRangeComShallow) AS min_val, MAX(DepthRangeComShallow) AS max_val FROM Actinopterygii_view WHERE DepthRangeComShallow IS NOT NULL")
+    initial_slider_ranges$com_shallow_depth <- c(floor(com_shallow_depth_range_raw$min_val), ceiling(com_shallow_depth_range_raw$max_val))
+    updateSliderInput(session, "param_com_shallow_depth", min = initial_slider_ranges$com_shallow_depth[1], max = initial_slider_ranges$com_shallow_depth[2], value = initial_slider_ranges$com_shallow_depth)
     
     message("--- Initial filter setup complete ---")
   }, once = TRUE, ignoreNULL = FALSE)
@@ -554,7 +553,7 @@ server <- function(input, output, session) {
       where_clauses <- c(where_clauses, paste0("FishBaseID = ", as.integer(input$param_fishbase_id)))
     }
     if (!is.null(input$param_gbif_id) && !is.na(input$param_gbif_id)) {
-      where_clauses <- c(where_clauses, paste0("GbifID = ", as.integer(input$param_gbif_id)))
+      where_clauses <- c(where_clauses, paste0("gbifID = ", as.integer(input$param_gbif_id)))
     }
     
     handle_nulls_in_slider_filter <- function(input_param_name, db_col_name, initial_range) {
@@ -653,20 +652,14 @@ server <- function(input, output, session) {
     input$param_catching_method
     input$param_basis_of_record
     input$param_rams_species
+    input$color_by
+    input$size_by
     drawn_polygon_wkt()
     
     message("--- Running filtered_data_from_db reactive (with drawn polygon) ---")
     where_clauses <- build_where_clauses(include_spatial_filter = TRUE)
-
-    query <- paste("SELECT",
-      "Species, Genus, Family, \"Order\", \"Class\",",
-      "decimalLatitude, decimalLongitude, year,",
-      "source, datasetID, basisOfRecord, scientificName,",
-      "AphiaID, FishBaseID, GbifID, RAMS_species,",
-      "AnaCat, Length_cm, Weight, DemersPelag,",
-      "DepthRangeShallow, DepthRangeDeep, DepthRangeComShallow, DepthRangeComDeep,",
-      "Vulnerability, Importance, Price, Catchingmethod, iucn_status, Fishbase_url",
-      "FROM", table_name)
+    
+    query <- paste("SELECT * FROM", table_name)
     if (length(where_clauses) > 0) {
       query <- paste(query, "WHERE", paste(where_clauses, collapse = " AND "))
     }
@@ -721,13 +714,8 @@ server <- function(input, output, session) {
     
     message("--- Running filtered_data_for_measo_diversity reactive (NO drawn polygon) ---")
     where_clauses <- build_where_clauses(include_spatial_filter = FALSE)
-
-    query <- paste("SELECT",
-      "Species, Genus, Family, \"Order\", \"Class\",",
-      "decimalLatitude, decimalLongitude, year,",
-      "AphiaID, FishBaseID, GbifID,",
-      "iucn_status, Vulnerability, Length_cm, Weight",
-      "FROM", table_name)
+    
+    query <- paste("SELECT * FROM", table_name)
     if (length(where_clauses) > 0) {
       query <- paste(query, "WHERE", paste(where_clauses, collapse = " AND "))
     }
@@ -747,12 +735,7 @@ server <- function(input, output, session) {
     message(paste("Records returned from DB for diversity (no drawn polygon):", nrow(df)))
     df
   })
-
-  # Debounced versions — declared here, after both reactives are fully defined.
-  # 600 ms delay prevents a DB query firing on every pixel of slider movement.
-  filtered_data_from_db_d       <- debounce(filtered_data_from_db,            600)
-  filtered_data_for_measo_div_d <- debounce(filtered_data_for_measo_diversity, 600)
-
+  
   #### Reset Filters ####
   observeEvent(input$removeAllTaxaBtn, {
     updateSelectizeInput(session, "param_taxon_input", selected = character(0))
@@ -813,7 +796,7 @@ server <- function(input, output, session) {
   })
   
   color_palette_func <- reactive({
-    df <- filtered_data_from_db_d()
+    df <- filtered_data_from_db()
     req(df)
     color_col_name <- point_color_col()
     
@@ -851,7 +834,7 @@ server <- function(input, output, session) {
   })
   
   point_radius_func <- reactive({
-    df <- filtered_data_from_db_d()
+    df <- filtered_data_from_db()
     req(df)
     size_col_name <- point_size_col()
     
@@ -932,7 +915,7 @@ server <- function(input, output, session) {
   })
   
   df_valid_coords <- reactive({
-    df <- filtered_data_from_db_d()
+    df <- filtered_data_from_db()
     req(df)
     
     df <- df %>%
@@ -1045,28 +1028,12 @@ server <- function(input, output, session) {
     )
   })
   
-  # Lightweight count reactive — a COUNT query transfers no rows at all,
-  # so the Active Filters stat cards update without waiting for the full data fetch.
-  filtered_counts <- reactive({
-    req(initial_slider_ranges$length)
-    where_clauses <- build_where_clauses(include_spatial_filter = TRUE)
-    where_sql <- if (length(where_clauses) > 0)
-      paste("WHERE", paste(where_clauses, collapse = " AND ")) else ""
-    dbGetQuery(con, paste(
-      "SELECT COUNT(*) AS n_records, COUNT(DISTINCT Species) AS n_species FROM",
-      table_name, where_sql
-    ))
-  })
-  filtered_counts_d <- debounce(filtered_counts, 600)
-
   output$record_count <- renderText({
-    counts <- filtered_counts_d()
-    paste("Records after applying filters:", format(counts$n_records, big.mark = ","))
+    paste("Records after applying filters:", nrow(df_valid_coords()))
   })
-
+  
   output$species_count <- renderText({
-    counts <- filtered_counts_d()
-    paste("Species after applying filters:", format(counts$n_species, big.mark = ","))
+    paste("Species after applying filters:", length(unique(df_valid_coords()$Species)))
   })
   
   observeEvent(drawn_polygon_wkt(), {
@@ -1097,7 +1064,7 @@ server <- function(input, output, session) {
   #### Spatial Diversity ####
   # filtered data table
   output$occurrence_table <- DT::renderDataTable({
-    df_for_table <- filtered_data_from_db_d()
+    df_for_table <- filtered_data_from_db()
     
     if ("geometry" %in% names(df_for_table)) {
       df_for_table <- st_drop_geometry(df_for_table)
@@ -1120,7 +1087,7 @@ server <- function(input, output, session) {
   diversity_metrics <- reactive({
     message("--- Calculating overall diversity metrics ---")
     
-    df <- filtered_data_from_db_d()
+    df <- filtered_data_from_db()
     
     if (nrow(df) == 0 || !("Species" %in% names(df))) {
       message("No data or 'Species' column missing for overall diversity calculation.")
@@ -1225,7 +1192,7 @@ server <- function(input, output, session) {
   measo_diversity_metrics <- reactive({
     message("--- Calculating MEASO region diversity metrics ---")
     
-    df <- filtered_data_for_measo_div_d()
+    df <- filtered_data_for_measo_diversity()
     req(df)
     req(measo_regions_info_sf())
     
@@ -1470,13 +1437,13 @@ server <- function(input, output, session) {
     if (input$temporal_area == "Drawn Polygon") {
       message("Using data from drawn polygon for temporal analysis.")
       if (!is.null(drawn_polygon_wkt())) {
-        return(filtered_data_from_db_d())
+        return(filtered_data_from_db())
       } else {
-        return(filtered_data_from_db_d())
+        return(filtered_data_from_db())
       }
     } else {
       message("Using data from MEASO region ", input$temporal_area, " for temporal analysis.")
-      df_no_poly <- filtered_data_for_measo_div_d()
+      df_no_poly <- filtered_data_for_measo_diversity()
       
       measo_regions_sf <- measo_regions_info_sf()
       
@@ -1661,9 +1628,9 @@ server <- function(input, output, session) {
   )
   
   h3_polygons_calculated <- eventReactive(input$calculate_h3_polygons, {
-    req(filtered_data_from_db_d())
+    req(filtered_data_from_db())
     
-    occurs_cells <- filtered_data_from_db_d() %>%
+    occurs_cells <- filtered_data_from_db() %>%
       mutate(
         lng = as.numeric(decimalLongitude),
         lat = as.numeric(decimalLatitude),
@@ -1763,7 +1730,7 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       cat("Download triggered\n")
-      df_for_table <- filtered_data_from_db_d()
+      df_for_table <- filtered_data_from_db()
       cat("Rows:", nrow(df_for_table), "\n")
       write.csv(df_for_table, file, row.names = FALSE)
     }
@@ -1794,8 +1761,8 @@ server <- function(input, output, session) {
   #### Active filters ####
   active_filters_summary <- reactive({
     
-    # Wait until DB initialisation has populated at least one slider range
-    req(initial_slider_ranges$length)
+    # Ensure all necessary default ranges are defined
+    req(initial_slider_ranges) 
     
     active_filters <- list()
     
