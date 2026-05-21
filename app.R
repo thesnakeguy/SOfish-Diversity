@@ -302,6 +302,17 @@ ui <- navbarPage(
 
 #### 4. SERVER LOGIC ####
 server <- function(input, output, session) {
+  # Set a species (eg Electrona) as the default species at startup to reduce significant lag
+  observe({
+    startuptaxon <- c("Stomiiformes")
+    
+    updateSelectizeInput(
+      session,
+      "param_taxon_input",
+      choices = startuptaxon,
+      selected = "Stomiiformes"
+    )
+  })
   
   #### Database Connection ####
   con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:", read_only = FALSE)
