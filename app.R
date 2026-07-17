@@ -302,7 +302,7 @@ ui <- navbarPage(
 
 #### 4. SERVER LOGIC ####
 server <- function(input, output, session) {
-  # Set a species (eg Electrona) as the default species at startup to reduce significant lag
+  # Set a species (eg Stomiiformes) as the default species at startup to reduce significant lag
   observe({
     startuptaxon <- c("Stomiiformes")
     
