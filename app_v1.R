@@ -764,111 +764,6 @@ server <- function(input, output, session) {
   filtered_data_from_db_d       <- debounce(filtered_data_from_db,            600)
   filtered_data_for_measo_div_d <- debounce(filtered_data_for_measo_diversity, 600)
 
-  #### Zoom/bounds-aware map loading (performance for 400k+ occurrence points) ####
-  # Below MAP_ZOOM_THRESHOLD we never pull individual points at all — we ask
-  # DuckDB for a cheap aggregated grid (COUNT per lat/lng bin) and draw that
-  # instead. Between MAP_ZOOM_THRESHOLD and MAP_ZOOM_FULL_DETAIL we pull
-  # points inside the current viewport, capped at MAP_MAX_POINTS as a safety
-  # net (the visible bounding box can still be large at moderate zoom). At
-  # MAP_ZOOM_FULL_DETAIL and above, the viewport is small enough on its own
-  # that we drop the cap entirely — what's drawn always matches what's in
-  # the table. If the user has drawn a boundary box, that box *is* the area
-  # of interest: we show every point inside it, uncapped and independent of
-  # the current pan/zoom, and skip the aggregated view altogether.
-  MAP_ZOOM_THRESHOLD   <- 6
-  MAP_ZOOM_FULL_DETAIL <- 10
-  MAP_MAX_POINTS       <- 4000
-  MAP_AGG_BIN_DEG     <- 3   # grid cell size (degrees) for the aggregated view
-
-  # Bounding-box WHERE clause built from leaflet's input$spatial_plot_bounds
-  build_bbox_clause <- function(bounds) {
-    if (is.null(bounds)) return(NULL)
-    paste0(
-      "decimalLatitude BETWEEN ", bounds$south, " AND ", bounds$north, " AND ",
-      "decimalLongitude BETWEEN ", bounds$west, " AND ", bounds$east
-    )
-  }
-
-  # Zoom and bounds arrive as separate inputs but change together on every
-  # pan/zoom — bundle them so downstream reactives only fire once per move.
-  map_view <- reactive({
-    list(zoom = input$spatial_plot_zoom, bounds = input$spatial_plot_bounds)
-  })
-
-  # --- Aggregated density grid (used below the zoom threshold, no boundary drawn) ---
-  df_map_agg <- reactive({
-    req(initial_slider_ranges$length)
-    where_clauses <- build_where_clauses(include_spatial_filter = TRUE)
-    where_clauses <- c(where_clauses, "decimalLongitude IS NOT NULL", "decimalLatitude IS NOT NULL")
-    where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
-
-    query <- paste0(
-      "SELECT ",
-      "ROUND(decimalLatitude / ", MAP_AGG_BIN_DEG, ") * ", MAP_AGG_BIN_DEG, " AS glat, ",
-      "ROUND(decimalLongitude / ", MAP_AGG_BIN_DEG, ") * ", MAP_AGG_BIN_DEG, " AS glng, ",
-      "COUNT(*) AS n ",
-      "FROM ", table_name, " ",
-      where_sql, " ",
-      "GROUP BY glat, glng"
-    )
-    message("Map aggregation query:\n", query)
-    dbGetQuery(con, query)
-  })
-
-  # --- Individual points: viewport-bounded/capped normally, but the full,
-  #     uncapped set within the drawn boundary whenever one is active ---
-  df_map_points <- reactive({
-    req(initial_slider_ranges$length)
-    view <- map_view()
-    polygon_active <- !is.null(drawn_polygon_wkt())
-    req(polygon_active || !is.null(view$bounds))
-
-    # A drawn boundary already defines the area of interest, so it takes
-    # priority over the current pan/zoom viewport, and is never capped —
-    # "all points in the box" means all of them.
-    apply_bbox  <- !polygon_active
-    apply_limit <- !polygon_active && (is.null(view$zoom) || view$zoom < MAP_ZOOM_FULL_DETAIL)
-
-    where_clauses <- build_where_clauses(include_spatial_filter = TRUE)
-    where_clauses <- c(where_clauses, "decimalLongitude IS NOT NULL", "decimalLatitude IS NOT NULL")
-    if (apply_bbox) {
-      where_clauses <- c(where_clauses, build_bbox_clause(view$bounds))
-    }
-    where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
-
-    query <- paste("SELECT",
-      "Species, Genus, Family, \"Order\", \"Class\",",
-      "decimalLatitude, decimalLongitude, year,",
-      "source, datasetID, basisOfRecord, scientificName,",
-      "AphiaID, FishBaseID, GbifID, RAMS_species,",
-      "AnaCat, Length_cm, Weight, DemersPelag,",
-      "DepthRangeShallow, DepthRangeDeep, DepthRangeComShallow, DepthRangeComDeep,",
-      "Vulnerability, Importance, Price, Catchingmethod, iucn_status, Fishbase_url",
-      "FROM", table_name, where_sql)
-
-    if (apply_limit) {
-      query <- paste(query, "LIMIT", MAP_MAX_POINTS)
-    }
-
-    message("Map viewport query (bbox=", apply_bbox, ", limit=", apply_limit, "):\n", query)
-    df <- dbGetQuery(con, query)
-
-    df %>%
-      mutate(
-        decimalLongitude = as.numeric(decimalLongitude),
-        decimalLatitude  = as.numeric(decimalLatitude),
-        Vulnerability    = as.numeric(Vulnerability),
-        Length_cm        = as.numeric(Length_cm),
-        Weight           = as.numeric(Weight),
-        year             = as.numeric(as.character(year))
-      )
-  })
-
-  # 600 ms debounce keeps this consistent with the other DB-backed reactives
-  # and avoids firing a query on every intermediate pan/zoom tick.
-  df_map_agg_d    <- debounce(df_map_agg,    600)
-  df_map_points_d <- debounce(df_map_points, 600)
-
   #### Reset Filters ####
   observeEvent(input$removeAllTaxaBtn, {
     updateSelectizeInput(session, "param_taxon_input", selected = character(0))
@@ -1048,7 +943,7 @@ server <- function(input, output, session) {
   })
   
   df_valid_coords <- reactive({
-    df <- df_map_points_d()
+    df <- filtered_data_from_db_d()
     req(df)
     
     df <- df %>%
@@ -1131,93 +1026,40 @@ server <- function(input, output, session) {
   })
   
   observe({
-    view <- map_view()
-    zoom <- view$zoom
-    polygon_active <- !is.null(drawn_polygon_wkt())
-
-    proxy <- leafletProxy("spatial_plot") %>%
-      clearMarkers() %>%
-      clearControls() %>%
-      clearGroup("agg_grid")
-
-    # A drawn boundary always shows full, uncapped detail — it defines its
-    # own area of interest, so the zoom-based aggregation doesn't apply.
-    show_aggregated <- !polygon_active && (is.null(zoom) || zoom < MAP_ZOOM_THRESHOLD)
-
-    if (show_aggregated) {
-      # --- Zoomed out: show an aggregated density grid, not raw points ---
-      # This is what actually saves you from ever handing the browser
-      # anywhere near 400k markers: at low zoom we only ask the DB for a
-      # small GROUP BY result (one row per grid cell), never the rows
-      # themselves.
-      agg <- df_map_agg_d()
-      req(agg)
-      if (nrow(agg) == 0) return()
-
-      pal <- colorNumeric("YlOrRd", domain = agg$n)
-
-      proxy %>%
-        addCircleMarkers(
-          data = agg,
-          lng = ~glng, lat = ~glat,
-          radius = ~pmin(35, 6 + log1p(n) * 4),
-          color = ~pal(n),
-          stroke = FALSE,
-          fillOpacity = 0.75,
-          label = ~paste0(format(n, big.mark = ","), " records"),
-          group = "agg_grid"
-        ) %>%
-        leaflet::addLegend(
-          position = "bottomleft",
-          pal = pal,
-          values = agg$n,
-          title = "Records per grid cell",
-          layerId = "colorLegend"
-        )
-
-    } else {
-      # --- Individual, styled points: viewport-bounded/capped, or, with a
-      #     drawn boundary or at high zoom, the full uncapped set ---
-      df <- df_valid_coords()
-      req(df)
-      if (nrow(df) == 0) return()
-
-      proxy %>%
-        addCircleMarkers(
-          data = df,
-          lng = ~decimalLongitude,
-          lat = ~decimalLatitude,
-          radius = ~point_radius_func()(marker_size_val),
-          color = ~color_palette_func()(marker_color_val),
-          stroke = FALSE,
-          fillOpacity = 0.9,
-          popup = ~popup_text
-        ) %>%
-        leaflet::addLegend(
-          position = "bottomleft",
-          pal = color_palette_func(),
-          values = df$marker_color_val,
-          title = if (point_color_col() == "Vulnerability") {
-            "Color by Vulnerability Interval"
-          } else if (point_color_col() == "iucn_status") {
-            "Color by IUCN status"
-          } else {
-            paste("Color by", point_color_col())
-          },
-          layerId = "colorLegend"
-        )
-
-      # The cap only ever applies when there's no drawn boundary and zoom
-      # is below MAP_ZOOM_FULL_DETAIL — only warn in that actual case.
-      limit_could_apply <- !polygon_active && (is.null(zoom) || zoom < MAP_ZOOM_FULL_DETAIL)
-      if (limit_could_apply && nrow(df) >= MAP_MAX_POINTS) {
-        showNotification(
-          paste0("Showing the first ", format(MAP_MAX_POINTS, big.mark = ","),
-                 " points in view — zoom in further, or draw a boundary box, to see the rest."),
-          type = "warning", duration = 6
-        )
-      }
+    req(df_valid_coords())
+    
+    if (nrow(df_valid_coords()) == 0) {
+      leafletProxy("spatial_plot") %>% clearMarkers() %>% clearControls()
+      return()
     }
+    
+    proxy <- leafletProxy("spatial_plot", data = df_valid_coords()) %>%
+      clearMarkers() %>%
+      clearControls()
+    
+    proxy %>% addCircleMarkers(
+      lng = ~decimalLongitude,
+      lat = ~decimalLatitude,
+      radius = ~point_radius_func()(marker_size_val),
+      color = ~color_palette_func()(marker_color_val),
+      stroke = FALSE,
+      fillOpacity = 0.9,
+      popup = ~popup_text
+    )
+    
+    proxy %>% leaflet::addLegend(
+      position = "bottomleft",
+      pal = color_palette_func(),
+      values = df_valid_coords()$marker_color_val,
+      title = if (point_color_col() == "Vulnerability") {
+        "Color by Vulnerability Interval"
+      } else if (point_color_col() == "iucn_status") {
+        "Color by IUCN status"
+      } else {
+        paste("Color by", point_color_col())
+      },
+      layerId = "colorLegend"
+    )
   })
   
   # Lightweight count reactive — a COUNT query transfers no rows at all,
