@@ -304,13 +304,13 @@ ui <- navbarPage(
 server <- function(input, output, session) {
   # Set a species (eg Stomiiformes) as the default species at startup to reduce significant lag
   observe({
-    startuptaxon <- c("Stomiiformes")
+    startuptaxon <- c("")
     
     updateSelectizeInput(
       session,
       "param_taxon_input",
       choices = startuptaxon,
-      selected = "Stomiiformes"
+      selected = ""
     )
   })
   
@@ -997,7 +997,7 @@ server <- function(input, output, session) {
   
   output$spatial_plot <- renderLeaflet({
     leaflet() %>%
-      addProviderTiles(providers$CartoDB.PositronNoLabels, group = "cartoDB - no labels") %>%
+      addProviderTiles(providers$Esri.WorldStreetMap, group = "Esri - World Street Map") %>%
       addProviderTiles(providers$Esri.OceanBasemap, group = "Esri - Ocean Basemap") %>%
       addLayersControl(
         baseGroups = c("cartoDB - no labels", "Esri - Ocean Basemap"),

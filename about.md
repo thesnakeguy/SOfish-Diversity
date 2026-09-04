@@ -8,7 +8,7 @@
 
 | Tab | Purpose |
 |---|---|
-| **Display** | Interactive occurrence map — colour and size points by family, IUCN status, vulnerability, and more |
+| **Display** | Interactive occurrence map - colour and size points by family, IUCN status, vulnerability, and more |
 | **Filters** | Narrow records by taxonomy, body size, depth, ecology, conservation status, commercial traits, and record metadata |
 | **Active Filters** | Review what filters are currently applied and how many records and species remain |
 | **Table** | Browse and download the filtered occurrence dataset as CSV |
@@ -24,6 +24,8 @@
 2. Switch to **Display** to see matching occurrences on the map. Optionally draw a polygon to restrict results to a custom area.
 3. Explore the **Spatial Diversity** and **Temporal Diversity** tabs to analyse patterns in your filtered data.
 4. Download any table as CSV using the buttons within each tab.
+
+Note: the map is showing the first 4,000 points in view — zoom in further, or draw a boundary box, to see the rest.
 
 ---
 
@@ -45,4 +47,29 @@ GBIF occurrence download: <a href="https://doi.org/10.15468/dl.uf8fd2" target="_
 
 **Source code & issues** — <a href="https://github.com/thesnakeguy/SOfish-Diversity" target="_blank">github.com/thesnakeguy/SOfish-Diversity</a>
 
+</div>
+
+---
+
+### Partners & Data Providers
+
+<div align="center" style="display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 20px; margin-top: 20px;">
+  <a href="https://www.naturalsciences.be/" target="_blank">
+    <img src="https://eurogoos.eu/api/media/file/natural-sciences.png" alt="Museum of Natural Sciences (RBINS)" height="80" style="margin: 10px;">
+  </a>
+  <a href="https://www.biodiversity.aq/" target="_blank">
+    <img src="https://avatars.githubusercontent.com/u/48433448?s=200&v=4" alt="biodiversity.aq" height="150" style="margin: 10px;">
+  </a>
+  <a href="https://obis.org/" target="_blank">
+    <img src="https://www.biodiversity.be/5500/download" alt="OBIS" height="100" style="margin: 10px;">
+  </a>
+  <a href="https://www.gbif.org/" target="_blank">
+    <img src="https://www.biodiversity.be/3005/download" alt="GBIF" height="100" style="margin: 10px;">
+  </a>
+  <a href="https://www.marinespecies.org/" target="_blank">
+    <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSTHwDDcEKxw6lR1ukbQ28-QrQS1IF0MJ_IBLpakt5pZQ&s=10" alt="WoRMS" height="50" style="margin: 10px;">
+  </a>
+  <a href="https://www.fishbase.se/" target="_blank">
+    <img src="https://www.fishbase.se/images/png/Fishbase-logo-CMYK.png" alt="FishBase" height="50" style="margin: 10px;">
+  </a>
 </div>
